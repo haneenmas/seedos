@@ -10,6 +10,9 @@ add_library(emu STATIC
     emu/mem.hpp
     emu/cpu.cpp
     emu/mem.cpp
+    emu/disasm.hpp
+    emu/disasm.cpp
+    
 )
 
 add_executable(seedos emu/main.cpp)
