@@ -4,12 +4,18 @@
 
 // ---------- helpers ---------------------------------------------------------
 
+<<<<<<< HEAD
 // Extract 'len' bits starting at bit 'pos' (0 = least-significant bit).
+=======
+>>>>>>> d6aed02 (feat(emu): jal/jalr + or latest changes)
 static inline uint32_t get_bits(uint32_t v, int pos, int len) {
     return (v >> pos) & ((1u << len) - 1u);
 }
 
+<<<<<<< HEAD
 // Sign-extend a value that is currently 'bits' wide to 32-bit two's complement.
+=======
+>>>>>>> d6aed02 (feat(emu): jal/jalr + or latest changes)
 static inline int32_t sign_extend(uint32_t v, int bits) {
     uint32_t m = 1u << (bits - 1);
     return (int32_t)((v ^ m) - m);
@@ -31,16 +37,28 @@ bool CPU::step(Memory& mem) {
     if (opcode == 0x13) {
         // I-type: OP-IMM ---> ADDI
         if (funct3 == 0b000) {                // ADDI
+<<<<<<< HEAD
             int32_t imm = sign_extend(get_bits(inst, 20, 12), 12); // 31..20
+=======
+            int32_t imm = sign_extend(get_bits(inst, 20, 12), 12);
+>>>>>>> d6aed02 (feat(emu): jal/jalr + or latest changes)
             uint32_t res = (uint32_t)((int32_t)x[rs1] + imm);
             if (rd != 0) x[rd] = res;
             pc += 4;
         } else {
+<<<<<<< HEAD
             return false; // other OP-IMM later
         }
 
     } else if (opcode == 0x33) {
         // R-type: ADD/SUB (selected by funct7)
+=======
+            return false;
+        }
+
+    } else if (opcode == 0x33) {
+        // R-type: ADD/SUB
+>>>>>>> d6aed02 (feat(emu): jal/jalr + or latest changes)
         uint32_t rs2    = get_bits(inst, 20, 5);
         uint32_t funct7 = get_bits(inst, 25, 7);
 
@@ -55,7 +73,11 @@ bool CPU::step(Memory& mem) {
             pc += 4;
 
         } else {
+<<<<<<< HEAD
             return false; // other R-type later
+=======
+            return false;
+>>>>>>> d6aed02 (feat(emu): jal/jalr + or latest changes)
         }
 
     } else if (opcode == 0x37) {
@@ -68,6 +90,7 @@ bool CPU::step(Memory& mem) {
     } else if (opcode == 0x63) {
         // B-type: BEQ (branch if equal)
         uint32_t rs2     = get_bits(inst, 20, 5);
+<<<<<<< HEAD
         uint32_t funct3b = funct3;
 
         // Rebuild split immediate: [12|10:5|4:1|11] then <<1 (LSB always 0)
@@ -100,21 +123,85 @@ bool CPU::step(Memory& mem) {
             return false; // other loads later
         }
 
+=======
+        uint32_t i12     = get_bits(inst, 31, 1);
+        uint32_t i10_5   = get_bits(inst, 25, 6);
+        uint32_t i4_1    = get_bits(inst, 8, 4);
+        uint32_t i11     = get_bits(inst, 7, 1);
+        uint32_t imm13   = (i12<<12) | (i11<<11) | (i10_5<<5) | (i4_1<<1);
+        int32_t  off     = sign_extend(imm13, 13);
+
+        if (funct3 == 0b000) { // BEQ
+            if (x[rs1] == x[rs2]) pc = pc + off;
+            else                  pc += 4;
+        } else {
+            return false;
+        }
+
+    } else if (opcode == 0x03) {
+        // I-type loads: LW
+        if (funct3 == 0b010) {
+            int32_t imm = sign_extend(get_bits(inst, 20, 12), 12);
+            uint32_t ea = x[rs1] + (uint32_t)imm;
+            uint32_t val = mem.load32(ea);
+            if (rd != 0) x[rd] = val;
+            pc += 4;
+        } else {
+            return false;
+        }
+
+>>>>>>> d6aed02 (feat(emu): jal/jalr + or latest changes)
     } else if (opcode == 0x23) {
         // S-type stores: SW
         uint32_t imm11_5 = get_bits(inst, 25, 7);
         uint32_t imm4_0  = get_bits(inst, 7, 5);
+<<<<<<< HEAD
         int32_t  imm     = sign_extend((imm11_5 << 5) | imm4_0, 12);
         uint32_t rs2     = get_bits(inst, 20, 5);
 
         if (funct3 == 0b010) { // SW
+=======
+        int32_t  imm     = sign_extend((imm11_5<<5) | imm4_0, 12);
+        uint32_t rs2     = get_bits(inst, 20, 5);
+
+        if (funct3 == 0b010) {
+>>>>>>> d6aed02 (feat(emu): jal/jalr + or latest changes)
             uint32_t ea = x[rs1] + (uint32_t)imm;
             mem.store32(ea, x[rs2]);
             pc += 4;
         } else {
+<<<<<<< HEAD
             return false; // other stores later
         }
 
+=======
+            return false;
+        }
+
+    } else if (opcode == 0x6F) {
+        // J-type: JAL (jump and link)
+        uint32_t imm20    = get_bits(inst, 31, 1);
+        uint32_t imm10_1  = get_bits(inst, 21, 10);
+        uint32_t imm11    = get_bits(inst, 20, 1);
+        uint32_t imm19_12 = get_bits(inst, 12, 8);
+        uint32_t imm21    = (imm20<<20) | (imm19_12<<12) | (imm11<<11) | (imm10_1<<1);
+        int32_t  off      = sign_extend(imm21, 21);
+
+        uint32_t ret = pc + 4;
+        pc = pc + off;
+        if (rd != 0) x[rd] = ret;
+
+    } else if (opcode == 0x67) {
+        // I-type: JALR (jump and link register) -- funct3 must be 000
+        if (funct3 != 0b000) return false;
+
+        int32_t imm = sign_extend(get_bits(inst, 20, 12), 12);
+        uint32_t ret = pc + 4;
+        uint32_t target = (x[rs1] + (uint32_t)imm) & ~1u; // LSB cleared
+        pc = target;
+        if (rd != 0) x[rd] = ret;
+
+>>>>>>> d6aed02 (feat(emu): jal/jalr + or latest changes)
     } else {
         return false; // unsupported opcode (for now)
     }
