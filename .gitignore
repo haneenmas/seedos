@@ -1,0 +1,11 @@
+
+# build outputs (generated)
+build/
+
+# Xcode local noise
+DerivedData/
+*.xcuserdatad
+*.xcuserstate
+
+# macOS noise
+.DS_Store
