@@ -6,8 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(emu STATIC
   emu/cpu.hpp  emu/cpu.cpp
-  emu/mem.hpp  emu/mem.cpp
+  emu/mem.hpp
   emu/disasm.hpp  emu/disasm.cpp
+    emu/main.hpp  emu/main.cpp
+  
 )
 
 target_include_directories(emu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/emu)
