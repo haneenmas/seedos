@@ -66,7 +66,8 @@ int main(){
     // --- Block D: call/return with JAL/JALR (a0=5, a1=12, returns a2=17) ---
     put(ram, 0x003C, enc_I(0x13, 10, 0b000, 0, 5));         // addi x10,x0,5  a0
     put(ram, 0x0040, enc_I(0x13, 11, 0b000, 0, 12));        // addi x11,x0,12 a1
-    put(ram, 0x0044, enc_J(0x6F, 1, (int32_t)0x0080 - (int32_t)0x0048)); // jal  x1, func
+    put(ram, 0x0044, enc_J(0x6F, 1, (int32_t)0x0080 - (int32_t)0x0044)); // jal  x1, +60 -> target 0x80
+
     put(ram, 0x0048, enc_I(0x13, 7, 0b000, 12, 0));         // addi x7,x12,0  copy result here
 
     // func at 0x80: a2 = a0 + a1; return
