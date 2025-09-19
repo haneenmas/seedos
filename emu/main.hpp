@@ -1,8 +1,8 @@
 //
 //  main.hpp
-//  seedos
+//  emu
 //
-//  Created by haneen masarwe on 15/09/2025.
+//  Created by haneen masarwe on 19/09/2025.
 //
 
 #ifndef main_hpp
