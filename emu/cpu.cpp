@@ -15,6 +15,9 @@ bool CPU::step(Memory& mem){
     uint32_t funct3 = get_bits(inst,12,3);
     uint32_t rs1    = get_bits(inst,15,5);
 
+    // base cost: 1 cycle per instruction
+    uint32_t cost = 1;
+
     if(opcode==0x13){ // OP-IMM (ADDI only here)
         if(funct3!=0b000) return false;
         int32_t imm = sign_extend(get_bits(inst,20,12),12);
@@ -36,7 +39,7 @@ bool CPU::step(Memory& mem){
     } else if(opcode==0x37){ // LUI
         if(rd!=0) x[rd] = get_bits(inst,12,20)<<12; pc+=4;
 
-    } else if(opcode==0x63){ // Branches (BEQ/BNE/BLT/BGE/BLTU/BGEU)
+    } else if(opcode==0x63){ // Branches
         uint32_t rs2   = get_bits(inst,20,5);
         uint32_t i12   = get_bits(inst,31,1);
         uint32_t i10_5 = get_bits(inst,25,6);
@@ -50,12 +53,15 @@ bool CPU::step(Memory& mem){
         else if(funct3==0b110) pc = (x[rs1] <  x[rs2]) ? pc+off : pc+4;                  // bltu
         else if(funct3==0b111) pc = (x[rs1] >= x[rs2]) ? pc+off : pc+4;                  // bgeu
         else return false;
+        // small extra for branch
+        cost += 0;
 
     } else if(opcode==0x03){ // LW
         if(funct3!=0b010) return false;
         int32_t imm = sign_extend(get_bits(inst,20,12),12);
         if(rd!=0) x[rd] = mem.load32(x[rs1] + (uint32_t)imm);
         pc+=4;
+        cost += 2; // mem is a bit more expensive
 
     } else if(opcode==0x23){ // SW
         uint32_t imm11_5 = get_bits(inst,25,7);
@@ -65,6 +71,7 @@ bool CPU::step(Memory& mem){
         if(funct3!=0b010) return false;
         mem.store32(x[rs1] + (uint32_t)imm, x[rs2]);
         pc+=4;
+        cost += 2; // mem store
 
     } else if(opcode==0x6F){ // JAL
         uint32_t i20    = get_bits(inst,31,1);
@@ -73,17 +80,19 @@ bool CPU::step(Memory& mem){
         uint32_t i19_12 = get_bits(inst,12,8);
         int32_t  off    = sign_extend((i20<<20)|(i19_12<<12)|(i11<<11)|(i10_1<<1),21);
         uint32_t ret = pc+4; pc = pc+off; if(rd!=0) x[rd]=ret;
+        cost += 1; // control transfer slight extra
 
     } else if(opcode==0x67){ // JALR (funct3=000)
         if(funct3!=0b000) return false;
         int32_t imm = sign_extend(get_bits(inst,20,12),12);
         uint32_t ret=pc+4; uint32_t tgt=(x[rs1]+(uint32_t)imm)&~1u;
         pc=tgt; if(rd!=0) x[rd]=ret;
+        cost += 1;
 
     } else if(opcode==0x73){ // SYSTEM: ECALL/EBREAK
         uint32_t imm12 = get_bits(inst,20,12);
         if(funct3==0 && imm12==0){            // ECALL
-            uint32_t id = x[17];              // a7 = syscall id
+            uint32_t id = x[17];              // a7
             uint32_t a0 = x[10];              // arg0
             uint32_t a1 = x[11];              // arg1
             switch(id){
@@ -108,6 +117,8 @@ bool CPU::step(Memory& mem){
         return false;
     }
 
-    x[0]=0; // keep x0 hard-wired to zero
+    x[0]=0;               // keep x0 hard-wired to zero
+    instret += 1;         // retired exactly one instruction
+    cycles  += cost;      // add our cost model
     return true;
 }
