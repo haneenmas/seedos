@@ -5,110 +5,73 @@
 #include "mem.hpp"
 #include "disasm.hpp"
 
-// --- tiny encoders so we don't hand-type hex -------------------------------
+// Minimal encoders
 static inline uint32_t enc_I(uint8_t op, uint8_t rd, uint8_t f3, uint8_t rs1, int32_t imm12){
-    uint32_t u = (uint32_t)(imm12 & 0xFFF);
-    return (u<<20) | (rs1<<15) | (f3<<12) | (rd<<7) | op;
+    uint32_t u=(uint32_t)(imm12 & 0xFFF);
+    return (u<<20)|(rs1<<15)|(f3<<12)|(rd<<7)|op;
 }
-static inline uint32_t enc_R(uint8_t f7, uint8_t rs2, uint8_t rs1, uint8_t f3, uint8_t rd, uint8_t op=0x33){
-    return (f7<<25) | (rs2<<20) | (rs1<<15) | (f3<<12) | (rd<<7) | op;
+static inline uint32_t enc_R(uint8_t f7,uint8_t rs2,uint8_t rs1,uint8_t f3,uint8_t rd,uint8_t op=0x33){
+    return (f7<<25)|(rs2<<20)|(rs1<<15)|(f3<<12)|(rd<<7)|op;
 }
-static inline uint32_t enc_S(uint8_t op, uint8_t f3, uint8_t rs1, uint8_t rs2, int32_t imm12){
-    uint32_t u = (uint32_t)(imm12 & 0xFFF);
-    uint32_t i11_5 = (u>>5)&0x7F, i4_0 = u & 0x1F;
-    return (i11_5<<25)|(rs2<<20)|(rs1<<15)|(f3<<12)|(i4_0<<7)|op;
-}
-static inline uint32_t enc_B(uint8_t f3, uint8_t rs1, uint8_t rs2, int32_t off){
+static inline uint32_t enc_B(uint8_t f3,uint8_t rs1,uint8_t rs2,int32_t off){
     uint32_t u=(uint32_t)off; // byte offset (even)
     uint32_t i12=(u>>12)&1, i10_5=(u>>5)&0x3F, i4_1=(u>>1)&0xF, i11=(u>>11)&1;
     return (i12<<31)|(i10_5<<25)|(rs2<<20)|(rs1<<15)|(f3<<12)|(i4_1<<8)|(i11<<7)|0x63;
 }
-static inline uint32_t enc_U(uint8_t op, uint8_t rd, uint32_t imm20){ return (imm20<<12)|(rd<<7)|op; }
-static inline uint32_t enc_J(uint8_t op, uint8_t rd, int32_t off){
-    uint32_t u=(uint32_t)off; // byte offset, LSB=0
-    uint32_t i20=(u>>20)&1, i10_1=(u>>1)&0x3FF, i11=(u>>11)&1, i19_12=(u>>12)&0xFF;
+static inline uint32_t enc_U(uint8_t op,uint8_t rd,uint32_t imm20){ return (imm20<<12)|(rd<<7)|op; }
+static inline uint32_t enc_J(uint8_t op,uint8_t rd,int32_t off){
+    uint32_t u=(uint32_t)off; uint32_t i20=(u>>20)&1,i10_1=(u>>1)&0x3FF,i11=(u>>11)&1,i19_12=(u>>12)&0xFF;
     return (i20<<31)|(i19_12<<12)|(i11<<20)|(i10_1<<21)|(rd<<7)|op;
 }
+static inline uint32_t enc_J_to(uint8_t rd, uint32_t pc, uint32_t target){ int32_t off=(int32_t)target-(int32_t)pc; return enc_J(0x6F,rd,off); }
 
-static inline void put(Memory& m, uint32_t a, uint32_t w){ m.store32(a, w); }
-static inline void show(const CPU& cpu, const Memory& ram){
-    uint32_t inst = ram.load32(cpu.pc);
-    std::cout << "PC=0x" << std::hex << std::setw(8) << std::setfill('0') << cpu.pc
-              << "  " << disasm(inst) << std::dec << "\n";
+static inline void put(Memory& m, uint32_t a, uint32_t w){ m.store32(a,w); }
+static inline void show(const CPU& c, const Memory& ram){
+    uint32_t inst=ram.load32(c.pc);
+    std::cout<<"PC=0x"<<std::hex<<std::setw(8)<<std::setfill('0')<<c.pc<<"  "<<disasm(inst)<<std::dec<<"\n";
 }
-
-
-// ---- safe “to target” helpers (avoid manual offset mistakes) --------------
-static inline uint32_t enc_J_to(uint8_t rd, uint32_t pc_of_jal, uint32_t target) {
-    // JAL uses: pc = pc + off   (pc = address of JAL itself)
-    int32_t off = (int32_t)target - (int32_t)pc_of_jal;
-    // off must be even (LSB 0) and fit 21-bit signed
-    return enc_J(0x6F, rd, off);
-}
-
-static inline uint32_t enc_B_to(uint8_t funct3, uint8_t rs1, uint8_t rs2,
-                                uint32_t pc_of_branch, uint32_t target) {
-    // B-type uses: pc = pc + off  (pc = address of the branch itself)
-    int32_t off = (int32_t)target - (int32_t)pc_of_branch;
-    return enc_B(funct3, rs1, rs2, off);
-}
-
-
-
-
-
-
-
 
 int main(){
     Memory ram(64*1024);
-    CPU cpu; cpu.pc = 0;
+    CPU cpu; cpu.pc=0;
 
-    // --- Block A: arithmetic & LUI/ADDI/ADD/SUB ----------------------------
-    put(ram, 0x0000, enc_I(0x13, 1, 0b000, 0, 5));          // addi x1,x0,5
-    put(ram, 0x0004, enc_I(0x13, 2, 0b000, 1, 10));         // addi x2,x1,10  -> x2=15
-    put(ram, 0x0008, enc_U(0x37, 3, 0x12));                 // lui  x3,0x12   -> x3=0x12000
-    put(ram, 0x000C, enc_I(0x13, 3, 0b000, 3, 34));         // addi x3,x3,34  -> x3=0x12022
-    put(ram, 0x0010, enc_R(0x00, 2, 1, 0b000, 4));          // add  x4,x1,x2  -> x4=20
-    put(ram, 0x0014, enc_R(0x20, 1, 4, 0b000, 5));          // sub  x5,x4,x1  -> x5=15
+    // Setup: x5 = -3, x4 = 2  (test signed compares)
+    put(ram, 0x0000, enc_I(0x13, 5, 0b000, 0, -3));  // addi x5,x0,-3
+    put(ram, 0x0004, enc_I(0x13, 4, 0b000, 0,  2));  // addi x4,x0,2
 
-    // --- Block B: memory LW/SW ---------------------------------------------
-    put(ram, 0x0018, enc_U(0x37, 10, 0x1));                 // lui  x10,0x1   -> x10=0x1000
-    put(ram, 0x001C, enc_S(0x23, 0b010, 10, 4, 0));         // sw   x4,0(x10) -> [0x1000]=20
-    put(ram, 0x0020, enc_I(0x03, 7, 0b010, 10, 0));         // lw   x7,0(x10) -> x7=20
+    // If (x5 < x4) then x7=111, else x7=999 using BLT/BGE
+    // blt x5,x4, +8  -> skip over the 'else' assignment
+    // OLD (wrong): jumps to 0x0010, then immediately skips the THEN block
+    // put(ram, 0x0008, enc_B(0b100, /*rs1=*/5, /*rs2=*/4, /*off=*/8));
 
-    // --- Block C: loop with BNE (sum 3..1) ---------------------------------
-    put(ram, 0x0024, enc_I(0x13, 11, 0b000, 0, 0));         // addi x11,x0,0  acc=0
-    put(ram, 0x0028, enc_I(0x13, 12, 0b000, 0, 3));         // addi x12,x0,3  i=3
-    // loop:
-    put(ram, 0x002C, enc_R(0x00, 12, 11, 0b000, 11));       // add  x11,x11,x12
-    put(ram, 0x0030, enc_I(0x13, 12, 0b000, 12, -1));       // addi x12,x12,-1
-    put(ram, 0x0034, enc_B_to(0b001, /*rs1=*/12, /*rs2=*/0, /*pc=*/0x0034, /*target=*/0x002C));
+    // NEW (correct): jump straight to THEN at 0x0014 when blt is true
+    put(ram, 0x0008, enc_B(0b100, /*rs1=*/5, /*rs2=*/4, /*off=*/(int32_t)0x0014 - (int32_t)0x0008));
 
-    put(ram, 0x0038, enc_I(0x13, 6, 0b000, 11, 0));         // addi x6,x11,0  -> x6=3+2+1=6
+    put(ram, 0x000C, enc_I(0x13, 7, 0b000, 0, 999 & 0xFFF)); // will be sign-truncated; just for visibility
+    // jump over then-part
+    put(ram, 0x0010, enc_J_to(/*rd=*/0, /*pc=*/0x0010, /*target=*/0x0018));
+    // then: x7 = 111
+    put(ram, 0x0014, enc_I(0x13, 7, 0b000, 0, 111));
+    // fallthrough:
+    // Now check BGE: if (x5 >= x4) set x6=1 else x6=0
+    // bge x5,x4, +8  -> take if true to set x6=1
+    put(ram, 0x0018, enc_B(0b101, /*rs1=*/5, /*rs2=*/4, /*off=*/8));
+    // false path: x6=0
+    put(ram, 0x001C, enc_I(0x13, 6, 0b000, 0, 0));
+    // jump over true path
+    put(ram, 0x0020, enc_J_to(/*rd=*/0, /*pc=*/0x0020, /*target=*/0x0028));
+    // true path: x6=1
+    put(ram, 0x0024, enc_I(0x13, 6, 0b000, 0, 1));
 
-    // --- Block D: call/return with JAL/JALR (a0=5, a1=12, returns a2=17) ---
-    put(ram, 0x003C, enc_I(0x13, 10, 0b000, 0, 5));         // addi x10,x0,5  a0
-    put(ram, 0x0040, enc_I(0x13, 11, 0b000, 0, 12));        // addi x11,x0,12 a1
-    put(ram, 0x0044, enc_J_to(/*rd=*/1, /*pc_of_jal=*/0x0044, /*target=*/0x0080));
+    // Halt: jal x0, 0
+    put(ram, 0x0028, enc_J_to(/*rd=*/0, /*pc=*/0x0028, /*target=*/0x0028));
 
-    put(ram, 0x0048, enc_I(0x13, 7, 0b000, 12, 0));         // addi x7,x12,0  copy result here
-    
-    
-    put(ram, 0x004C, enc_J_to(/*rd=*/0, /*pc_of_jal=*/0x004C, /*target=*/0x004C)); // jal x0, +0 (halt)
-
-
-    // func at 0x80: a2 = a0 + a1; return
-    put(ram, 0x0080, enc_R(0x00, 11, 10, 0b000, 12));       // add x12,x10,x11
-    put(ram, 0x0084, enc_I(0x67, 0, 0b000, 1, 0));          // jalr x0,x1,0
-
-    // --- run & trace --------------------------------------------------------
-    for(int i=0;i<40;++i){
-        show(cpu, ram);
-        bool ok = cpu.step(ram);
+    for(int i=0;i<20;++i){
+        show(cpu,ram);
+        bool ok=cpu.step(ram);
         if(!ok){ std::cerr<<"Unsupported at PC=0x"<<std::hex<<cpu.pc<<std::dec<<"\n"; break; }
-        std::cout<<" -> x1="<<cpu.x[1]<<" x2="<<cpu.x[2]<<" x3=0x"<<std::hex<<cpu.x[3]<<std::dec
-                 <<" x4="<<cpu.x[4]<<" x5="<<cpu.x[5]<<" x6="<<cpu.x[6]<<" x7="<<cpu.x[7]
+        std::cout<<" -> x4="<<cpu.x[4]<<" x5="<<(int32_t)cpu.x[5]
+                 <<"  x6="<<cpu.x[6]<<" x7="<<cpu.x[7]
                  <<"  pc=0x"<<std::hex<<cpu.pc<<std::dec<<"\n";
     }
     return 0;
