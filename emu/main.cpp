@@ -37,6 +37,29 @@ static inline void show(const CPU& cpu, const Memory& ram){
               << "  " << disasm(inst) << std::dec << "\n";
 }
 
+
+// ---- safe “to target” helpers (avoid manual offset mistakes) --------------
+static inline uint32_t enc_J_to(uint8_t rd, uint32_t pc_of_jal, uint32_t target) {
+    // JAL uses: pc = pc + off   (pc = address of JAL itself)
+    int32_t off = (int32_t)target - (int32_t)pc_of_jal;
+    // off must be even (LSB 0) and fit 21-bit signed
+    return enc_J(0x6F, rd, off);
+}
+
+static inline uint32_t enc_B_to(uint8_t funct3, uint8_t rs1, uint8_t rs2,
+                                uint32_t pc_of_branch, uint32_t target) {
+    // B-type uses: pc = pc + off  (pc = address of the branch itself)
+    int32_t off = (int32_t)target - (int32_t)pc_of_branch;
+    return enc_B(funct3, rs1, rs2, off);
+}
+
+
+
+
+
+
+
+
 int main(){
     Memory ram(64*1024);
     CPU cpu; cpu.pc = 0;
@@ -60,15 +83,20 @@ int main(){
     // loop:
     put(ram, 0x002C, enc_R(0x00, 12, 11, 0b000, 11));       // add  x11,x11,x12
     put(ram, 0x0030, enc_I(0x13, 12, 0b000, 12, -1));       // addi x12,x12,-1
-    put(ram, 0x0034, enc_B(0b001, 12, 0, (int32_t)0x002C - (int32_t)0x0034)); // bne x12,x0, loop
+    put(ram, 0x0034, enc_B_to(0b001, /*rs1=*/12, /*rs2=*/0, /*pc=*/0x0034, /*target=*/0x002C));
+
     put(ram, 0x0038, enc_I(0x13, 6, 0b000, 11, 0));         // addi x6,x11,0  -> x6=3+2+1=6
 
     // --- Block D: call/return with JAL/JALR (a0=5, a1=12, returns a2=17) ---
     put(ram, 0x003C, enc_I(0x13, 10, 0b000, 0, 5));         // addi x10,x0,5  a0
     put(ram, 0x0040, enc_I(0x13, 11, 0b000, 0, 12));        // addi x11,x0,12 a1
-    put(ram, 0x0044, enc_J(0x6F, 1, (int32_t)0x0080 - (int32_t)0x0044)); // jal  x1, +60 -> target 0x80
+    put(ram, 0x0044, enc_J_to(/*rd=*/1, /*pc_of_jal=*/0x0044, /*target=*/0x0080));
 
     put(ram, 0x0048, enc_I(0x13, 7, 0b000, 12, 0));         // addi x7,x12,0  copy result here
+    
+    
+    put(ram, 0x004C, enc_J_to(/*rd=*/0, /*pc_of_jal=*/0x004C, /*target=*/0x004C)); // jal x0, +0 (halt)
+
 
     // func at 0x80: a2 = a0 + a1; return
     put(ram, 0x0080, enc_R(0x00, 11, 10, 0b000, 12));       // add x12,x10,x11
