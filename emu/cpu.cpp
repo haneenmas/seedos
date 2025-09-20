@@ -8,6 +8,7 @@ static inline int32_t  sign_extend(uint32_t v,int bits){ uint32_t m=1u<<(bits-1)
 
 bool CPU::step(Memory& mem){
     if (halted) return false;
+    yielded = false;                    // start a fresh step
 
     uint32_t inst   = mem.load32(pc);
     uint32_t opcode = get_bits(inst,0,7);
@@ -17,13 +18,13 @@ bool CPU::step(Memory& mem){
 
     uint32_t cost = 1; // base CPI=1
 
-    if(opcode==0x13){ // OP-IMM (ADDI only here)
+    if(opcode==0x13){                   // OP-IMM: we only use ADDI here
         if(funct3!=0b000) return false;
         int32_t imm = sign_extend(get_bits(inst,20,12),12);
         if(rd!=0) x[rd] = (uint32_t)((int32_t)x[rs1] + imm);
         pc += 4;
 
-    } else if(opcode==0x33){ // R-type ALU subset
+    } else if(opcode==0x33){            // R-type subset: ADD/SUB/SLL/SRL/SRA/SLT/SLTU
         uint32_t rs2    = get_bits(inst,20,5);
         uint32_t funct7 = get_bits(inst,25,7);
         if(funct3==0b000 && funct7==0)               { if(rd!=0) x[rd]=x[rs1]+x[rs2];             pc+=4; }
@@ -35,31 +36,31 @@ bool CPU::step(Memory& mem){
         else if(funct3==0b011 && funct7==0)          { if(rd!=0) x[rd]=(x[rs1]<x[rs2])?1u:0u;     pc+=4; }
         else return false;
 
-    } else if(opcode==0x37){ // LUI
+    } else if(opcode==0x37){            // LUI
         if(rd!=0) x[rd] = get_bits(inst,12,20)<<12; pc+=4;
 
-    } else if(opcode==0x63){ // branches
+    } else if(opcode==0x63){            // conditional branches
         uint32_t rs2   = get_bits(inst,20,5);
         uint32_t i12   = get_bits(inst,31,1);
         uint32_t i10_5 = get_bits(inst,25,6);
         uint32_t i4_1  = get_bits(inst,8,4);
         uint32_t i11   = get_bits(inst,7,1);
         int32_t  off   = sign_extend((i12<<12)|(i11<<11)|(i10_5<<5)|(i4_1<<1),13);
-        if     (funct3==0b000) pc = (x[rs1]==x[rs2]) ? pc+off : pc+4;
-        else if(funct3==0b001) pc = (x[rs1]!=x[rs2]) ? pc+off : pc+4;
-        else if(funct3==0b100) pc = ((int32_t)x[rs1] <  (int32_t)x[rs2]) ? pc+off : pc+4;
-        else if(funct3==0b101) pc = ((int32_t)x[rs1] >= (int32_t)x[rs2]) ? pc+off : pc+4;
-        else if(funct3==0b110) pc = (x[rs1] <  x[rs2]) ? pc+off : pc+4;
-        else if(funct3==0b111) pc = (x[rs1] >= x[rs2]) ? pc+off : pc+4;
+        if     (funct3==0b000) pc = (x[rs1]==x[rs2]) ? pc+off : pc+4;  // beq
+        else if(funct3==0b001) pc = (x[rs1]!=x[rs2]) ? pc+off : pc+4;  // bne
+        else if(funct3==0b100) pc = ((int32_t)x[rs1] <  (int32_t)x[rs2]) ? pc+off : pc+4; // blt
+        else if(funct3==0b101) pc = ((int32_t)x[rs1] >= (int32_t)x[rs2]) ? pc+off : pc+4; // bge
+        else if(funct3==0b110) pc = (x[rs1] <  x[rs2]) ? pc+off : pc+4;  // bltu
+        else if(funct3==0b111) pc = (x[rs1] >= x[rs2]) ? pc+off : pc+4;  // bgeu
         else return false;
 
-    } else if(opcode==0x03){ // LW
+    } else if(opcode==0x03){            // LW
         if(funct3!=0b010) return false;
         int32_t imm = sign_extend(get_bits(inst,20,12),12);
         if(rd!=0) x[rd] = mem.load32(x[rs1] + (uint32_t)imm);
         pc+=4; cost+=2;
 
-    } else if(opcode==0x23){ // SW
+    } else if(opcode==0x23){            // SW
         uint32_t imm11_5 = get_bits(inst,25,7);
         uint32_t imm4_0  = get_bits(inst,7,5);
         int32_t  imm     = sign_extend((imm11_5<<5)|imm4_0,12);
@@ -68,72 +69,49 @@ bool CPU::step(Memory& mem){
         mem.store32(x[rs1] + (uint32_t)imm, x[rs2]);
         pc+=4; cost+=2;
 
-    } else if(opcode==0x6F){ // JAL
+    } else if(opcode==0x6F){            // JAL
         uint32_t i20=get_bits(inst,31,1), i10_1=get_bits(inst,21,10), i11=get_bits(inst,20,1), i19_12=get_bits(inst,12,8);
         int32_t  off=sign_extend((i20<<20)|(i19_12<<12)|(i11<<11)|(i10_1<<1),21);
         uint32_t ret=pc+4; pc=pc+off; if(rd!=0) x[rd]=ret; cost+=1;
 
-    } else if(opcode==0x67){ // JALR
+    } else if(opcode==0x67){            // JALR
         if(funct3!=0b000) return false;
         int32_t imm=sign_extend(get_bits(inst,20,12),12);
         uint32_t ret=pc+4; uint32_t tgt=(x[rs1]+(uint32_t)imm)&~1u;
         pc=tgt; if(rd!=0) x[rd]=ret; cost+=1;
 
-    } else if(opcode==0x73){ // SYSTEM
+    } else if(opcode==0x73){            // SYSTEM
         uint32_t imm12 = get_bits(inst,20,12);
-        if(funct3==0 && imm12==0){              // ECALL
-            uint32_t id = x[17];                // a7
-            uint32_t a0 = x[10];                // arg0/result
-            uint32_t a1 = x[11];                // arg1
+        if(funct3==0 && imm12==0){      // ECALL
+            uint32_t id = x[17];        // a7
+            uint32_t a0 = x[10];        // arg0/result
+            uint32_t a1 = x[11];        // arg1
             switch(id){
-                case 0: // exit(a0)
-                    exit_code = a0; halted = true; break;
-                case 1: // print_u32(a0)
-                    std::cout << a0 << "\n"; break;
-                case 2: // putchar(a0)
-                    std::cout << (char)(a0 & 0xFF) << std::flush; break;
-                case 3: { // sbrk(Δ)
-                    int32_t delta = (int32_t)a0;
-                    uint32_t old = mem.sbrk(delta);
-                    x[10] = old;                // return old break in a0
-                    break;
-                }
-                case 4: { // write_str(ptr,len)
-                    uint32_t ptr = a0, len = a1;
-                    for(uint32_t i=0;i<len;i++) std::cout << (char)mem.load8(ptr+i);
-                    std::cout.flush();
-                    break;
-                }
-                    
-                    
-                    
-                    
-                    
-                case 5: { // malloc(bytes) -> a0 = ptr (or 0)
-                    uint32_t bytes = a0;
-                    uint32_t ptr = mem.malloc32(bytes);
-                    x[10] = ptr;
-                    break;
-                }
-                case 6: { // free(ptr)
-                    uint32_t ptr = a0;
-                    mem.free32(ptr);
-                    break;
-                }
-
-                default:
-                    std::cerr << "[ecall] unsupported id " << id << "\n";
-                    halted = true; exit_code = (uint32_t)-1; break;
+                case 0: exit_code=a0; halted=true; break;      // exit(a0)
+                case 1: std::cout<<a0<<"\n"; break;            // print_u32(a0)
+                case 2: std::cout<<(char)(a0&0xFF)<<std::flush; break; // putchar(a0)
+                case 3: x[10]=mem.sbrk((int32_t)a0); break;    // sbrk(delta)->a0=old
+                case 4: for(uint32_t i=0;i<a1;i++) std::cout<<(char)mem.load8(a0+i);
+                        std::cout.flush(); break;              // write_str(ptr,len)
+                case 5: x[10]=mem.malloc32(a0); break;         // malloc(bytes)->a0
+                case 6: mem.free32(a0); break;                 // free(ptr)
+                case 7: yielded=true; break;                   // yield()
+                default: std::cerr<<"[ecall] unsupported "<<id<<"\n"; halted=true; exit_code=(uint32_t)-1; break;
             }
             pc += 4;
-        } else if(funct3==0 && imm12==1){       // EBREAK
-            halted = true; pc += 4;
-        } else return false;
+        } else if(funct3==0 && imm12==1){ halted=true; pc+=4; } // EBREAK
+        else return false;
 
     } else return false;
 
     x[0]=0;
     instret += 1;
     cycles  += cost;
+
+    // "timer" preemption: flip yield after 'quantum' instructions
+    if (quantum && ++slice_count >= quantum){
+        yielded = true;
+        slice_count = 0;
+    }
     return true;
 }

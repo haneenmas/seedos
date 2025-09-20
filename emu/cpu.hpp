@@ -1,20 +1,25 @@
 #pragma once
 #include <cstdint>
 
-// forward declare to avoid include cycles
 class Memory;
 
+// A CPU *is* the thread context.
 struct CPU {
-    uint32_t x[32]{};     // integer regs (x0..x31); x0 is hard-wired to 0
-    uint32_t pc{0};       // program counter
+    uint32_t x[32]{};        // x0..x31 (x0 stays 0)
+    uint32_t pc{0};          // program counter
 
-    // syscall/stop state
+    // run state
     bool     halted{false};
     uint32_t exit_code{0};
 
-    // performance counters
-    uint64_t cycles{0};   // very simple cost model
-    uint64_t instret{0};  // instructions retired
+    // perf counters
+    uint64_t cycles{0};
+    uint64_t instret{0};
 
-    bool step(Memory& mem);  // run one instruction; updates pc/x[]
+    // scheduling knobs
+    uint32_t quantum{0};     // 0 = no preemption, otherwise N instructions per timeslice
+    uint32_t slice_count{0}; // retired in current slice
+    bool     yielded{false}; // set by step() when quantum expires, or by ECALL 7
+
+    bool step(Memory& mem);  // execute one instruction; updates counters/pc/x[]
 };
