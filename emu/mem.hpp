@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <vector>
+#include <unordered_map>
 #include <stdexcept>
 #include <algorithm>
 
@@ -15,8 +16,7 @@ public:
 
     // ---- loads/stores (little-endian) with simple MMIO timer ----
     uint32_t load32(uint32_t addr) const {
-        // MMIO: 0x3000 TIME (read-only)
-        if (addr == 0x3000) return mmio_time;
+        if (addr == 0x3000) return mmio_time;        // TIME
         if (addr + 3 >= bytes.size()) throw std::out_of_range("load32 OOB");
         return (uint32_t)bytes[addr]
              | ((uint32_t)bytes[addr+1] << 8)
@@ -24,15 +24,8 @@ public:
              | ((uint32_t)bytes[addr+3] << 24);
     }
     void store32(uint32_t addr, uint32_t v) {
-        // MMIO control
-        if (addr == 0x3004) {             // add ticks
-            mmio_time += v;
-            return;
-        }
-        if (addr == 0x3008) {             // reset
-            mmio_time = 0;
-            return;
-        }
+        if (addr == 0x3004) { mmio_time += v; return; } // add ticks
+        if (addr == 0x3008) { mmio_time  = 0; return; } // reset
         if (addr + 3 >= bytes.size()) throw std::out_of_range("store32 OOB");
         bytes[addr]   = (uint8_t)(v & 0xFF);
         bytes[addr+1] = (uint8_t)((v >> 8) & 0xFF);
@@ -52,7 +45,7 @@ public:
     void tick(uint32_t cycles){ mmio_time += cycles; }
     uint32_t time() const { return mmio_time; }
 
-    // ---- sbrk & tiny first-fit allocator (same as before) ----
+    // ---- sbrk & tiny first-fit allocator ----
     uint32_t sbrk(int32_t delta){
         uint32_t old = heap_brk;
         int64_t target = (int64_t)heap_brk + (int64_t)delta;
@@ -105,14 +98,20 @@ public:
         }
     }
 
+    // ---- kernel mutex (very small) ----
+    // returns true if we took the lock; false if already locked
+    bool try_lock(uint32_t addr){
+        return !locks[addr] ? (locks[addr]=true, true) : false;
+    }
+    void unlock(uint32_t addr){ locks[addr]=false; }
+
 private:
     struct Block{ uint32_t start, size; bool free; };
 
     std::vector<uint8_t> bytes;
     uint32_t text_end, heap_brk, heap_base;
 
-    // MMIO timer
     uint32_t mmio_time;
-
+    std::unordered_map<uint32_t,bool> locks;
     std::vector<Block> blocks; // sorted by start
 };
