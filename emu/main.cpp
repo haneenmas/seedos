@@ -7,6 +7,11 @@
 #include "mem.hpp"
 #include "disasm.hpp"
 #include "trace.hpp"
+#include "elf.hpp"
+#include <sys/stat.h>
+
+static bool file_exists(const char* p){ struct stat st; return ::stat(p,&st)==0; }
+
 
 
 // ---------- Encoders ----------
@@ -35,6 +40,11 @@ static inline void emit_li32(Memory& m, uint32_t at, uint8_t rd, uint32_t imm){
     put32(m, at+0, enc_LUI(rd, upper));
     put32(m, at+4, enc_I(0x13, rd, 0b000, rd, lower));
 }
+
+
+
+
+
 
 // ---------- Part A: basic syscalls + timer ----------
 static void emit_syscall_demo(Memory& ram, uint32_t PC){
@@ -123,6 +133,22 @@ static void emit_inc_worker(Memory& m, uint32_t base, uint32_t counter_addr,
 
 int main(){
     Memory ram(64*1024);
+    // Try to load and run an ELF if one is present; otherwise run built-in demos.
+    const char* ELF_PATH = "program.elf"; // place program.elf next to the binary or run dir
+    if (file_exists(ELF_PATH)) {
+        uint32_t entry = load_elf32_into_memory(ELF_PATH, ram);
+        CPU elf_cpu; elf_cpu.pc = entry; elf_cpu.quantum = 200; elf_cpu.tid = 0;
+        std::cout << "[elf] loaded '"<<ELF_PATH<<"' entry=0x" << std::hex << entry << std::dec << "\n";
+        // Run until it exits (ECALL 0) or halts
+        for (int steps=0; steps<10'000'000 && !elf_cpu.halted; ++steps) {
+            elf_cpu.step(ram);
+        }
+        std::cout << "[elf] finished exit_code="<<elf_cpu.exit_code
+                  << " instret="<<elf_cpu.instret<<" cycles="<<elf_cpu.cycles<<"\n\n";
+    } else {
+        std::cout << "[elf] '"<<ELF_PATH<<"' not found; running built-in demos.\n";
+    }
+
 
     // --- Part A & B quick checks ---
     emit_syscall_demo(ram, 0x0000);

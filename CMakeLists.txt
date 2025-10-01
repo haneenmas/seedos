@@ -9,6 +9,8 @@ add_library(emu STATIC
   emu/mem.hpp
   emu/disasm.hpp  emu/disasm.cpp
     emu/main.hpp  emu/main.cpp
+    emu/trace.cpp  emu/trace.hpp
+    emu/elf.cpp      emu/elf.hpp
   
 )
 
