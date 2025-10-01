@@ -2,6 +2,8 @@
 #include "mem.hpp"
 #include <cstdint>
 #include <iostream>
+#include "trace.hpp"
+
 
 static inline uint32_t get_bits(uint32_t v,int pos,int len){ return (v>>pos)&((1u<<len)-1u); }
 static inline int32_t  sign_extend(uint32_t v,int bits){ uint32_t m=1u<<(bits-1); return (int32_t)((v^m)-m); }
@@ -108,5 +110,11 @@ bool CPU::step(Memory& mem){
     if (quantum && ++slice_count >= quantum){
         yielded = true; slice_count = 0;
     }
+    
+    
+    // record one retired instruction
+    global_trace().push(tid, pc /* NOTE: pc now holds *next* pc; we want the executed one */,
+                        opcode, (uint32_t)cycles, instret);
     return true;
+
 }

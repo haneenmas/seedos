@@ -6,6 +6,8 @@
 #include "cpu.hpp"
 #include "mem.hpp"
 #include "disasm.hpp"
+#include "trace.hpp"
+
 
 // ---------- Encoders ----------
 static inline uint32_t enc_I(uint8_t op,uint8_t rd,uint8_t f3,uint8_t rs1,int32_t imm12){
@@ -217,5 +219,15 @@ int main(){
     run_group(true);
 
     std::cout << "[timer] ticks="<<ram.time()<<"\n";
+    
+    
+    // Dump trace next to the binary (Xcode runs from your build dir)
+    if (!global_trace().write_ndjson("seedos_trace.ndjson")){
+        std::cerr << "[trace] failed to write trace file\n";
+    } else {
+        std::cout << "[trace] wrote seedos_trace.ndjson ("
+                  << "last instructions retained)\n";
+    }
+
     return 0;
 }
