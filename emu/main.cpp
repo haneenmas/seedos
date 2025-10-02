@@ -13,6 +13,53 @@
 #include "sync.hpp"     // <- the spinlock + LockedCounter
 #include "syscall.hpp"
 #include <cstring>
+#include <unordered_set>   //
+
+
+
+static void dump_regs(const CPU& c){
+    using std::hex; using std::dec;
+    std::cout << "   pc=0x" << std::hex << c.pc << std::dec
+              << " | x1="  << c.x[1] << " x2=" << c.x[2]
+              << " x3=0x" << std::hex << c.x[3] << std::dec
+              << " x4="  << c.x[4] << " x5=" << c.x[5]
+              << " x6="  << c.x[6] << " x7=" << c.x[7] << "\n";
+}
+
+// Run; when PC hits a breakpoint, show instruction + regs, then single-step a few ops
+static void run_with_breakpoints(CPU& cpu, Memory& ram,
+                                 std::initializer_list<uint32_t> bp_list,
+                                 int max_steps = 200)
+{
+    std::unordered_set<uint32_t> bps(bp_list);
+    for (int i = 0; i < max_steps && !cpu.halted; ++i) {
+        if (bps.count(cpu.pc)) {
+            uint32_t inst = ram.load32(cpu.pc);
+            std::cout << "[brk] pc=0x" << std::hex << cpu.pc << std::dec
+                      << "  " << disasm(inst) << "\n";
+            dump_regs(cpu);
+
+            // single-step N instructions so you see execution evolve
+            const int N = 3;
+            for (int s = 0; s < N && !cpu.halted; ++s) {
+                cpu.step(ram);
+                uint32_t ninst = ram.load32(cpu.pc);
+                std::cout << "  -> next pc=0x" << std::hex << cpu.pc << std::dec
+                          << "  " << disasm(ninst) << "\n";
+            }
+        } else {
+            cpu.step(ram);
+        }
+    }
+}
+
+
+
+
+
+
+
+
 
 // simple helper: does a file exist?
 static bool file_exists(const char* p){ struct stat st; return ::stat(p,&st)==0; }
@@ -163,6 +210,43 @@ int main(){
 
         for (int i = 0; i < 50 && !cpu.halted; ++i) cpu.step(ram);
     }
+    std::cout << "\n[dbg] breakpoints + single-step demo\n";
+    {
+        Memory ram(64*1024);
+        CPU cpu; cpu.pc = 0;
+
+        // Same style encoders you already use
+        auto encI = [](uint8_t op,uint8_t rd,uint8_t rs1,int32_t imm12){
+            uint32_t u = (uint32_t)imm12 & 0xFFF;
+            return (u<<20)|(rs1<<15)|(0b000<<12)|(rd<<7)|op;
+        };
+        auto encR = [](uint8_t funct7,uint8_t rs2,uint8_t rs1,
+                       uint8_t funct3,uint8_t rd){
+            return (funct7<<25)|(rs2<<20)|(rs1<<15)|(funct3<<12)|(rd<<7)|0x33;
+        };
+
+        // program:
+        // 0x00: addi x1, x0, 5
+        // 0x04: addi x2, x1, 10
+        // 0x08: add  x4, x1, x2
+        // 0x0C: sub  x5, x4, x1     <-- we'll break here (pc=0x0C)
+        ram.store32(0x00, encI(0x13, 1, 0, 5));                     // addi x1, x0, 5
+        ram.store32(0x04, encI(0x13, 2, 1, 10));                    // addi x2, x1, 10
+        ram.store32(0x08, encR(0, 2, 1, 0, 4));                     // add  x4, x1, x2
+        ram.store32(0x0C, encR(0b0100000, 1, 4, 0, 5));             // sub  x5, x4, x1
+
+        ram.store32(0x10, encI(0x13, 6, 5, 1));                     // addi x6, x5, 1
+        ram.store32(0x14, encI(0x13, 7, 6, 2));                     // addi x7, x6, 2
+
+        auto encSYSTEM = [](uint32_t imm12){ return (imm12 << 20) | 0x73; }; // ECALL
+        ram.store32(0x18, encI(0x13, 10, 0, 0));                    // a0=0
+        ram.store32(0x1C, encI(0x13, 17, 0, 0));                    // a7=0
+        ram.store32(0x20, encSYSTEM(0));
+
+        // breakpoint at 0x0C (just before SUB executes)
+        run_with_breakpoints(cpu, ram, {0x0C}, /*max_steps=*/20);
+    }
+
 
 
 
