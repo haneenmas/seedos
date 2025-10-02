@@ -17,7 +17,81 @@
 #include <unordered_set>
 #include <sstream>     // for parsing command line
 #include <cctype>
+
+#include <array>
+
 //
+struct Task {
+    const char* name;
+    CPU cpu;               // full context (pc + regs)
+    bool done = false;
+    uint64_t steps = 0;    // accounting
+};
+
+// load a tiny program at 'base' (same encoders you already use)
+static void load_task_program(Memory& ram, uint32_t base, int id){
+    auto encI = [](uint8_t op,uint8_t rd,uint8_t rs1,int32_t imm12){
+        uint32_t u=(uint32_t)imm12 & 0xFFF;
+        return (u<<20)|(rs1<<15)|(0b000<<12)|(rd<<7)|op;
+    };
+    auto encR = [](uint8_t f7,uint8_t rs2,uint8_t rs1,uint8_t f3,uint8_t rd){
+        return (f7<<25)|(rs2<<20)|(rs1<<15)|(f3<<12)|(rd<<7)|0x33;
+    };
+    auto encSYSTEM = [](uint32_t imm12){ return (imm12<<20)|0x73; };
+
+    // Simple loop: x1 counts, x2 accumulates a pattern; then ecall(exit)
+    ram.store32(base + 0x00, encI(0x13, 1, 0, 0));      // x1=0
+    ram.store32(base + 0x04, encI(0x13, 2, 0, id));     // x2=id (task id)
+    ram.store32(base + 0x08, encI(0x13, 1, 1, 1));      // loop: x1++
+    ram.store32(base + 0x0C, encR(0,  1,  2, 0, 2));    // x2 = x2 + x1
+    ram.store32(base + 0x10, encI(0x13,10, 0, 0));      // a0=0
+    ram.store32(base + 0x14, encI(0x13,17, 0, 0));      // a7=0 (exit)
+    // CHEAT: loop a bit then exit, via a small BEQ trick or step budget in scheduler.
+    // Here we rely on the scheduler's global step budget to stop; we still place an ECALL:
+    ram.store32(base + 0x18, encSYSTEM(0));             // ecall(exit)
+}
+
+static void run_round_robin_demo(){
+    std::cout << "\n[sched] round-robin demo\n";
+
+    Memory ram(64*1024);
+    Task A{"A"}, B{"B"};
+    const uint32_t A_BASE = 0x0000;
+    const uint32_t B_BASE = 0x1000;
+
+    load_task_program(ram, A_BASE, 1); A.cpu.pc = A_BASE;
+    load_task_program(ram, B_BASE, 2); B.cpu.pc = B_BASE;
+
+    std::array<Task*,2> q = { &A, &B };
+    const int QUANTUM = 20;          // N instructions per slice
+    const uint64_t MAX_STEPS = 2000; // overall safety stop
+
+    int cur = 0;
+    uint64_t total_steps = 0;
+
+    while(total_steps < MAX_STEPS){
+        Task* t = q[cur];
+        if(!t->done){
+            int slice = 0;
+            while(slice < QUANTUM && !t->done){
+                if(t->cpu.halted){ t->done = true; break; }
+                t->cpu.step(ram);
+                ++t->steps; ++slice; ++total_steps;
+            }
+            std::cout << "[sched] ran task " << t->name
+                      << " for " << slice << " steps  pc=0x"
+                      << std::hex << t->cpu.pc << std::dec << "\n";
+        }
+        // stop if both done
+        if(A.done && B.done) break;
+        // pick next runnable
+        cur = (cur+1) % 2;
+        if(q[cur]->done && !(A.done && B.done)) cur = (cur+1) % 2; // skip finished
+    }
+
+    std::cout << "[sched] finished: total=" << total_steps
+              << "  A.steps=" << A.steps << "  B.steps=" << B.steps << "\n";
+}
 
 
 
@@ -362,6 +436,8 @@ int main(){
 
             std::unordered_set<uint32_t> bps = { 0x0C };              // one breakpoint
             run_repl(cpu, ram, bps);
+            run_round_robin_demo();
+
         }
 
     }
