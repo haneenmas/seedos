@@ -11,6 +11,7 @@
 #include "trace.hpp"
 #include "elf.hpp"      // keep even if ELF is missing; we fallback
 #include "sync.hpp"     // <- the spinlock + LockedCounter
+#include "syscall.hpp"
 
 // simple helper: does a file exist?
 static bool file_exists(const char* p){ struct stat st; return ::stat(p,&st)==0; }
@@ -87,6 +88,36 @@ int main(){
         t1.join(); t2.join();
         std::cout << "[race] locked result=" << c2.value.load() << "\n\n";
     }
+    std::cout << "[sys] demo calls\n";
+    {
+        CPU kcpu; Memory kram(64*1024);     // tiny scratch env
+
+        // print an int
+        kcpu.x[17] = 1;     // a7 = puti
+        kcpu.x[10] = 123;   // a0 = 123
+        handle_ecall(kcpu, kram);
+
+        // grow heap by 64; return old break in a0
+        kcpu.x[17] = 2;     // a7 = sbrk
+        kcpu.x[10] = 64;    // delta
+        handle_ecall(kcpu, kram);
+
+        // query cycles (will be 0 in this tiny CPU we just made)
+        kcpu.x[17] = 3;     // a7 = cycles
+        handle_ecall(kcpu, kram);
+
+        // print a character
+        kcpu.x[17] = 4;     // a7 = putch
+        kcpu.x[10] = 'A';
+        handle_ecall(kcpu, kram);
+
+        // exit(0)
+        kcpu.x[17] = 0;     // a7 = exit
+        kcpu.x[10] = 0;     // code
+        handle_ecall(kcpu, kram);
+    }
+    std::cout << "\n";
+
 
     return 0;
 }
