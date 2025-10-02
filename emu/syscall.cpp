@@ -49,8 +49,26 @@ bool handle_ecall(CPU& cpu, Memory& mem){
         std::cout << c << std::flush;
         return true;
     }
+        case 5: { // write buffer from emulated memory: a0=ptr, a1=len
+            uint32_t ptr = cpu.x[10];
+            uint32_t len = cpu.x[11];
+            for(uint32_t i=0; i<len; ++i){
+                char c = static_cast<char>(mem.load8(ptr + i));
+                std::cout << c;
+            }
+            std::cout.flush();
+            cpu.x[10] = len;    // return bytes written in a0 (like POSIX write)
+            return true;
+        }
+
     default:
         std::cout << "[sys] unknown ecall id=" << id << " a0="<<a0<<" a1="<<a1<<"\n";
         return true;
     }
+    
+    
+    
+    
+
+
 }
