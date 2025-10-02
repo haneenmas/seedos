@@ -13,7 +13,11 @@
 #include "sync.hpp"     // <- the spinlock + LockedCounter
 #include "syscall.hpp"
 #include <cstring>
-#include <unordered_set>   //
+#include <unordered_set>
+#include <unordered_set>
+#include <sstream>     // for parsing command line
+#include <cctype>
+//
 
 
 
@@ -25,6 +29,92 @@ static void dump_regs(const CPU& c){
               << " x4="  << c.x[4] << " x5=" << c.x[5]
               << " x6="  << c.x[6] << " x7=" << c.x[7] << "\n";
 }
+static std::string hex32(uint32_t x){
+    std::ostringstream os;
+    os << std::hex << std::showbase << x;
+    return os.str();
+}
+
+static void dump_words(const Memory& ram, uint32_t addr, int n){
+    for(int i=0;i<n;i++){
+        uint32_t a = addr + 4*i;
+        uint32_t w = ram.load32(a);
+        std::cout << "  " << hex32(a) << ": " << hex32(w)
+                  << "  " << disasm(w) << "\n";
+    }
+}
+
+static void disasm_ahead(const Memory& ram, uint32_t pc, int k){
+    for(int i=0;i<k;i++){
+        uint32_t a = pc + 4*i;
+        uint32_t w = ram.load32(a);
+        std::cout << "  " << hex32(a) << ": " << disasm(w) << "\n";
+    }
+}
+
+static void run_repl(CPU& cpu, Memory& ram, std::unordered_set<uint32_t>& bps){
+    auto help = []{
+        std::cout <<
+        "commands:\n"
+        "  c                 continue until breakpoint/exit\n"
+        "  s [n]             single-step n (default 1)\n"
+        "  b <hex>           toggle breakpoint at address (e.g. b 0xC)\n"
+        "  r                 show registers\n"
+        "  m <addr> <n>      dump n words from addr (hex)\n"
+        "  d [k]             disasm k ahead from current pc (default 4)\n"
+        "  q                 quit debugger\n"
+        "  h                 help\n";
+    };
+    help();
+
+    std::string line;
+    while(true){
+        std::cout << "(dbg) pc=" << hex32(cpu.pc) << " > " << std::flush;
+        if(!std::getline(std::cin, line)) break;
+        std::istringstream iss(line);
+        std::string cmd; iss >> cmd;
+        if(cmd=="c"){
+            // run until breakpoint/exit
+            while(!cpu.halted){
+                if(bps.count(cpu.pc)) {
+                    std::cout << "[hit] breakpoint at " << hex32(cpu.pc) << "\n";
+                    break;
+                }
+                cpu.step(ram);
+            }
+        }else if(cmd=="s"){
+            int n=1; if(iss>>n){} // optional argument
+            while(n-- > 0 && !cpu.halted){
+                cpu.step(ram);
+            }
+            uint32_t w = ram.load32(cpu.pc);
+            std::cout << "next: " << hex32(cpu.pc) << "  " << disasm(w) << "\n";
+        }else if(cmd=="b"){
+            std::string hx; iss>>hx;
+            uint32_t a = std::stoul(hx, nullptr, 0);
+            if(bps.count(a)){ bps.erase(a); std::cout<<"- bp "<<hex32(a)<<"\n";}
+            else            { bps.insert(a); std::cout<<"+ bp "<<hex32(a)<<"\n";}
+        }else if(cmd=="r"){
+            dump_regs(cpu);
+        }else if(cmd=="m"){
+            std::string hx; int n=1; iss>>hx>>n;
+            uint32_t a = std::stoul(hx, nullptr, 0);
+            dump_words(ram, a, n);
+        }else if(cmd=="d"){
+            int k=4; if(iss>>k){}; disasm_ahead(ram, cpu.pc, k);
+        }else if(cmd=="q"){
+            break;
+        }else if(cmd=="h" || cmd=="?"){
+            help();
+        }else if(cmd.empty()){
+            continue;
+        }else{
+            std::cout << "unknown. type 'h' for help.\n";
+        }
+        if(cpu.halted) std::cout << "[halted]\n";
+    }
+}
+
 
 // Run; when PC hits a breakpoint, show instruction + regs, then single-step a few ops
 static void run_with_breakpoints(CPU& cpu, Memory& ram,
@@ -244,7 +334,36 @@ int main(){
         ram.store32(0x20, encSYSTEM(0));
 
         // breakpoint at 0x0C (just before SUB executes)
-        run_with_breakpoints(cpu, ram, {0x0C}, /*max_steps=*/20);
+//        run_with_breakpoints(cpu, ram, {0x0C}, /*max_steps=*/20);
+        std::cout << "\n[dbg] interactive REPL (type 'h' for help)\n";
+        {
+            Memory ram(64*1024);
+            CPU cpu; cpu.pc = 0;
+
+            // (reuse your encI/encR and the same program you built earlier)
+            auto encI = [](uint8_t op,uint8_t rd,uint8_t rs1,int32_t imm12){
+                uint32_t u=(uint32_t)imm12 & 0xFFF;
+                return (u<<20)|(rs1<<15)|(0b000<<12)|(rd<<7)|op;
+            };
+            auto encR = [](uint8_t f7,uint8_t rs2,uint8_t rs1,uint8_t f3,uint8_t rd){
+                return (f7<<25)|(rs2<<20)|(rs1<<15)|(f3<<12)|(rd<<7)|0x33;
+            };
+            auto encSYSTEM = [](uint32_t imm12){ return (imm12<<20)|0x73; };
+
+            ram.store32(0x00, encI(0x13, 1, 0, 5));
+            ram.store32(0x04, encI(0x13, 2, 1, 10));
+            ram.store32(0x08, encR(0, 2, 1, 0, 4));                   // add x4, x1, x2
+            ram.store32(0x0C, encR(0b0100000, 1, 4, 0, 5));           // sub x5, x4, x1
+            ram.store32(0x10, encI(0x13, 6, 5, 1));
+            ram.store32(0x14, encI(0x13, 7, 6, 2));
+            ram.store32(0x18, encI(0x13,10, 0, 0));                   // a0=0
+            ram.store32(0x1C, encI(0x13,17, 0, 0));                   // a7=0
+            ram.store32(0x20, encSYSTEM(0));                          // ecall (exit)
+
+            std::unordered_set<uint32_t> bps = { 0x0C };              // one breakpoint
+            run_repl(cpu, ram, bps);
+        }
+
     }
 
 
