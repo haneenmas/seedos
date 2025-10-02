@@ -12,6 +12,7 @@
 #include "elf.hpp"      // keep even if ELF is missing; we fallback
 #include "sync.hpp"     // <- the spinlock + LockedCounter
 #include "syscall.hpp"
+#include <cstring>
 
 // simple helper: does a file exist?
 static bool file_exists(const char* p){ struct stat st; return ::stat(p,&st)==0; }
@@ -117,6 +118,52 @@ int main(){
         handle_ecall(kcpu, kram);
     }
     std::cout << "\n";
+    
+    
+    std::cout << "[user] demo: write string via ECALL\n";
+    {
+        Memory ram(64*1024);
+        CPU cpu;
+        cpu.pc = 0;
+
+        // Put the string at 0x200
+        const char* msg = "Hello from user space!\n";
+        constexpr uint32_t BASE = 0x200;
+        for (uint32_t i = 0; msg[i]; ++i) ram.store8(BASE + i, (uint8_t)msg[i]);
+        uint32_t len = (uint32_t)std::strlen(msg);
+
+        auto encI = [](uint8_t op, uint8_t rd, uint8_t rs1, int32_t imm12){
+            uint32_t u = (uint32_t)imm12 & 0xFFF;
+            return (u << 20) | (rs1 << 15) | (0b000 << 12) | (rd << 7) | op;
+        };
+        auto encLUI = [](uint8_t rd, uint32_t imm20){
+            // imm20 goes to bits [31:12]
+            return (imm20 << 12) | (rd << 7) | 0x37; // LUI opcode = 0x37
+        };
+        auto encSYSTEM = [](uint32_t imm12){ return (imm12 << 20) | 0x73; }; // ECALL if imm12==0
+
+        // Correct order to form 32-bit address:
+        //   LUI a0, upper20(BASE)
+        //   ADDI a0, a0, lower12(BASE)
+        ram.store32(0x00, encLUI(10 /*a0*/, BASE >> 12));               // a0 = BASE&~0xFFF
+        ram.store32(0x04, encI(0x13 /*ADDI*/, 10 /*a0*/, 10 /*a0*/,     // a0 += low12
+                                (int32_t)(BASE & 0xFFF)));
+
+        // a1 = len
+        ram.store32(0x08, encI(0x13 /*ADDI*/, 11 /*a1*/, 0 /*x0*/, (int32_t)len));
+        // a7 = 5 (write)
+        ram.store32(0x0C, encI(0x13 /*ADDI*/, 17 /*a7*/, 0 /*x0*/, 5));
+        // ecall (write)
+        ram.store32(0x10, encSYSTEM(0));
+
+        // exit(0): a0=0; a7=0; ecall
+        ram.store32(0x14, encI(0x13 /*ADDI*/, 10 /*a0*/, 0 /*x0*/, 0));
+        ram.store32(0x18, encI(0x13 /*ADDI*/, 17 /*a7*/, 0 /*x0*/, 0));
+        ram.store32(0x1C, encSYSTEM(0));
+
+        for (int i = 0; i < 50 && !cpu.halted; ++i) cpu.step(ram);
+    }
+
 
 
     return 0;
