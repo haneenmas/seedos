@@ -1,4 +1,5 @@
-# seedos — Tiny RV32I Emulator with Debugger & MMIO
+# seedos — Tiny RV32I Emulator with Debugger & MMIO  ![ci](https://img.shields.io/github/actions/workflow/status/haneenmas/seedos/ci.yml?branch=main)
+
 ## Architecture (bird’s-eye)
 
       +-------------------+
