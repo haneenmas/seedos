@@ -1,4 +1,23 @@
 # seedos — Tiny RV32I Emulator with Debugger & MMIO
+## Architecture (bird’s-eye)
+
+      +-------------------+
+      |    seedos (app)   |
+      |  demos + REPL UI  |
+      +---------+---------+
+                |
+                v
+        +---------------+        +-----------+
+        |  CPU (RV32I)  |<------>|  Disasm   |
+        +-------+-------+        +-----------+
+                |                 (mirrors decoder)
+                v
+        +---------------+
+        |   Memory      |——— MMIO 0x4000_0000 → UART (host stdout)
+        +-------+-------+
+                |
+           sbrk/heap
+
 
 **One-shot pitch.** A compact, readable RISC-V RV32I emulator you can **step**, **break**, and **poke** like real hardware. It blends computer architecture (decoder/disasm), OS ideas (syscalls, scheduler, traps), and tooling (Xcode/CMake, tests, CI). The goal: make every bit easy to explain to a recruiter or hiring manager.
 
