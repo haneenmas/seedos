@@ -1,6 +1,4 @@
 # seedos — Tiny RV32I Emulator with Debugger & MMIO  ![ci](https://img.shields.io/github/actions/workflow/status/haneenmas/seedos/ci.yml?branch=main)
-
-## Architecture (bird’s-eye)
 ## Architecture (Mermaid)
 
 ```mermaid
@@ -11,6 +9,10 @@ flowchart TB
   B --> D[Memory]
   D -->|MMIO 0x4000_0000| E[UART → host stdout]
   D --> F[sbrk/heap]
+
+
+## Architecture (bird’s-eye)
+
 
 
       +-------------------+
