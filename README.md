@@ -37,6 +37,16 @@
 - **Tests:** Unit tests for ADDI/SUB/branches and `sbrk`.
 - **Tooling:** CMake + Xcode project generation, GitHub Actions CI.
 
+- ### New: Lock-free SPSC queue
+Single-producer/single-consumer ring buffer using `std::atomic` with acquire/release (no locks). Includes a short demo and test.
+
+### New: Mini assembler
+Two-pass, string-based assembler for a subset of RV32I: `addi, add, sub, lui, lw, sw, beq/bne/blt/bge, jal/jalr, ebreak, ecall`. Feeds directly into the emulator memory so you can write tiny programs inline.
+
+### New: More tests
+Coverage for negative branch offsets, trap paths (misaligned), MMIO UART (stdout capture), and software breakpoint patch/restore.
+
+
 ---
 
 ## Quick start
