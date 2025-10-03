@@ -23,8 +23,7 @@
            sbrk/heap
 
 
-**One-shot pitch.** A compact, readable RISC-V RV32I emulator you can **step**, **break**, and **poke** like real hardware. It blends computer architecture (decoder/disasm), OS ideas (syscalls, scheduler, traps), and tooling (Xcode/CMake, tests, CI). The goal: make every bit easy to explain to a recruiter or hiring manager.
-
+**One-shot pitch.** A compact, readable RISC-V RV32I emulator you can **step**, **break**, and **poke** like real hardware. It blends computer architecture (decoder/disasm), OS ideas (syscalls, scheduler, traps), and tooling (Xcode/CMake, tests, CI). 
 ![demo](docs/demo.gif)
 
 ---
