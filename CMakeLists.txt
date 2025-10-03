@@ -1,31 +1,45 @@
 cmake_minimum_required(VERSION 3.16)
-project(seedos CXX)
+project(seedos LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_library(emu STATIC
-  emu/cpu.hpp  emu/cpu.cpp
-  emu/mem.hpp
-  emu/disasm.hpp  emu/disasm.cpp
-    emu/main.hpp  emu/main.cpp
-    emu/trace.cpp  emu/trace.hpp
-    emu/elf.cpp      emu/elf.hpp
+# ---- library with emulator sources ----
+add_library(emu
+    emu/cpu.cpp
+    emu/disasm.cpp
+    emu/trace.cpp
+    emu/elf.cpp
     emu/syscall.cpp
-  
+    # headers listed so they show in Xcode (optional)
+    emu/cpu.hpp
+    emu/disasm.hpp
+    emu/trace.hpp
+    emu/elf.hpp
+    emu/syscall.hpp
+    emu/mem.hpp
+    emu/sync.hpp
 )
-
 target_include_directories(emu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/emu)
-add_executable(seedos emu/main.cpp)
+
+# ---- main executable ----
+add_executable(seedos
+    emu/main.cpp
+)
 target_link_libraries(seedos PRIVATE emu)
 
-# tests target (no gtest needed)
+# ---- tests executable (shows up as a separate scheme) ----
 add_executable(seedos_tests
+      tests/test_util.hpp
     tests/test_cpu.cpp
 )
-target_include_directories(seedos_tests PRIVATE ${CMAKE_SOURCE_DIR})
+target_include_directories(seedos_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/emu
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+)
 target_link_libraries(seedos_tests PRIVATE emu)
 
-
-
-
+# Enable ctest and add one smoke test (optional)
+enable_testing()
+add_test(NAME unit_cpu COMMAND seedos_tests)
