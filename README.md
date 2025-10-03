@@ -1,23 +1,29 @@
-# seedos — tiny RV32I emulator (educational)
+# seedos — Tiny RV32I Emulator with Debugger & MMIO
 
-A minimal, readable **RISC-V RV32I** emulator you can step through like a textbook.  
-It ties together **computer architecture, OS concepts, data structures, algorithms, and compiler/ABI fundamentals**:
+**One-shot pitch.** A compact, readable RISC-V RV32I emulator you can **step**, **break**, and **poke** like real hardware. It blends computer architecture (decoder/disasm), OS ideas (syscalls, scheduler, traps), and tooling (Xcode/CMake, tests, CI). The goal: make every bit easy to explain to a recruiter or hiring manager.
 
-- **Instruction set implemented:** `ADDI`, `ADD`, `SUB`, `LUI`, `LW`, `SW`, `BEQ`, `BNE`, `BLT`, `BGE`, `JAL`, `JALR`.
-- **PC-relative control flow:** correct split-immediate decoding + sign-extension for B/J formats.
-- **Registers:** 32 general purpose (`x0..x31`), with `x0` hard-wired to 0.
-- **Memory:** simple byte-addressable RAM (little-endian, 32-bit `load32`/`store32`).
-- **Disassembler:** mirrors the decoder so every step prints a readable instruction trace.
-- **Calling convention demo:** real stack frame using `sp (x2)`, `ra (x1)`, `s0/fp (x8)`, plus a local variable on the stack.
-
-> Elevator pitch: “I implemented a tiny RV32I emulator with correct bitfield decoding, PC-relative jumps, a proper callee prologue/epilogue, and a mirrored disassembler so I can explain each state transition.”
+![demo](docs/demo.gif)
 
 ---
 
-## Directory layout
+## Highlights (what’s “wow”)
+- **Devices:** Memory-mapped UART at `0x4000_0000` — storing a byte prints to host console.
+- **Traps:** Illegal / misaligned / access fault; **EBREAK** software breakpoints (INT3-style).
+- **Debugger REPL:** `c`(continue), `s`(step), `b`(toggle breakpoint), `r`(regs), `m`(mem), `d`(disasm).
+- **Scheduling:** Preemptive **round-robin** with instruction-count time slices.
+- **Syscalls:** Minimal ECALL shim (puti / putch / sbrk / cycles / exit).
+- **Tests:** Unit tests for ADDI/SUB/branches and `sbrk`.
+- **Tooling:** CMake + Xcode project generation, GitHub Actions CI.
 
+---
 
-cd ~/code/seedos
-git add emu/main.cpp
-git commit -m "feat(stack): real callee prologue/epilogue; local variable at 4(sp); result=(a0+a1)+3"
-git push
+## Quick start
+```bash
+git clone https://github.com/haneenmas/seedos
+cd seedos
+mkdir build && cd build
+cmake -G Xcode -DCMAKE_OSX_DEPLOYMENT_TARGET=12.2 ..
+# Either open in Xcode:
+open seedos.xcodeproj
+# Or build from terminal:
+cmake --build . --config Debug
