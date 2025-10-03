@@ -16,7 +16,9 @@
 #include "trace.hpp"
 #include "elf.hpp"       // ELF loader (we fallback to demos if file missing)
 #include "sync.hpp"      // spinlock + LockedCounter
-#include "syscall.hpp"   // handle_ecall
+#include "syscall.hpp"
+#include "spsc.hpp"// handle_ecall
+#include "asm.hpp"
 
 // ------------------ small helpers ------------------
 static inline std::string hex32(uint32_t x){
@@ -317,9 +319,34 @@ int main(){
         drm.store32(0x1C, enc_I(17,0,0,0));                        // a7=0
         drm.store32(0x20, enc_SYSTEM(0));                          // ecall(exit)
 
-        std::unordered_set<uint32_t> bps = { 0x0C };               // example bp
+        std::unordered_set<uint32_t> bps = { 0x0C };
+        // example bp
+        std::cout << "[asm] mini-assembler demo\n";
+            Memory m(64*1024); CPU c; c.pc=0;
+            std::string src = R"(
+                addi x1, x0, 5
+                addi x2, x1, 10
+                loop:
+                add  x4, x1, x2
+                sub  x5, x4, x1
+                beq  x5, x2, done
+                jal  loop
+                done:
+                ecall
+            )";
+            assemble_to_memory(src, m, 0);
+            for(int i=0;i<50 && !c.halted;i++) c.step(m);
+        std::cout << "[spsc] demo\n";
+           SPSCQueue<int, 1024> q;
+           std::atomic<bool> done{false};
+           std::thread prod([&]{ for(int i=0;i<100000;i++){ while(!q.push(i)){} } done=true; });
+           int got=0,x=0;
+           std::thread cons([&]{ while(!done.load() || !q.empty()){ if(q.pop(x)) got++; } });
+           prod.join(); cons.join();
+           std::cout << "[spsc] received=" << got << "\n";
         run_repl(d, drm, bps);
     }
+    
 
     // 8) round-robin scheduler
     run_round_robin_demo();

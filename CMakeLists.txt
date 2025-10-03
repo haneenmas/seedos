@@ -19,6 +19,8 @@ add_library(emu
     emu/syscall.hpp
     emu/mem.hpp
     emu/sync.hpp
+    emu/spsc.hpp
+    emu/asm.hpp
 )
 target_include_directories(emu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/emu)
 
@@ -32,6 +34,9 @@ target_link_libraries(seedos PRIVATE emu)
 add_executable(seedos_tests
       tests/test_util.hpp
     tests/test_cpu.cpp
+     tests/test_spsc.cpp
+    tests/test_assembler.cpp
+    tests/test_traps_break_uart.cpp
 )
 target_include_directories(seedos_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
