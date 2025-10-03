@@ -1,4 +1,25 @@
+
 # seedos — tiny RV32I emulator (educational)
+## Architecture (bird’s eye)
+
+![demo](docs/demo.gif)
+          +-------------------+
+          |    seedos (app)   |
+          |  demos + REPL UI  |
+          +---------+---------+
+                    |
+                    v
+            +---------------+        +-----------+
+            |  CPU (RV32I)  |<------>|  Disasm   |
+            +-------+-------+        +-----------+
+                    |                 (mirrors decoder)
+                    v
+            +---------------+
+            |   Memory      |——— MMIO 0x4000_0000 → UART (host stdout)
+            +-------+-------+
+                    |
+               sbrk/heap
+
 
 A minimal, readable **RISC-V RV32I** emulator you can step through like a textbook.  
 It ties together **computer architecture, OS concepts, data structures, algorithms, and compiler/ABI fundamentals**:
