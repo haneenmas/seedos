@@ -19,6 +19,23 @@
 #include "sync.hpp"
 #include "syscall.hpp"
 
+
+
+
+
+
+static void print_help(const char* argv0){
+    std::cout <<
+      "usage: " << argv0 << " [--heap] [--dbg] [--rr] [--rrp] [--elf <path>]\n"
+      "  --heap        : heap & timer demo\n"
+      "  --dbg         : tiny debugger REPL\n"
+      "  --rr          : cooperative round-robin demo\n"
+      "  --rrp         : preemptive round-robin demo\n"
+      "  --elf <path>  : load and run a 32-bit RISC-V ELF (fallback to demos if missing)\n"
+      "  --help        : this message\n";
+}
+
+
 // -------------------------------
 // Small utilities used everywhere
 // -------------------------------
@@ -161,7 +178,22 @@ static void run_repl(CPU& cpu, Memory& ram, std::unordered_set<uint32_t>& bps){
             help();
         }else if(cmd.empty()){
             continue;
-        }else{
+        }
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        else{
             std::cout << "unknown. type 'h' for help.\n";
         }
         if(cpu.halted) std::cout << "[halted]\n";
@@ -279,6 +311,21 @@ int main(int argc, char** argv){
     // reusable RAM/CPU for ELF & heap demo
     Memory ram(64*1024);
     CPU cpu; cpu.pc = 0;
+    // --- CLI parse ---
+    std::string elf_path = "program.elf";
+    bool run_heap=false, run_dbg=false, run_rr=false, run_rrp=false;
+
+    for(int i=1;i<argc;i++){
+        std::string a = argv[i];
+        if(a=="--help"){ print_help(argv[0]); return 0; }
+        else if(a=="--heap") run_heap = true;
+        else if(a=="--dbg")  run_dbg  = true;
+        else if(a=="--rr")   run_rr   = true;
+        else if(a=="--rrp")  run_rrp  = true;
+        else if(a=="--elf" && i+1<argc){ elf_path = argv[++i]; }
+        else { std::cerr << "unknown arg: " << a << "\n"; print_help(argv[0]); return 1; }
+    }
+
 
     // 1) ELF (always attempted first; if it fails, we fall through)
     if (file_exists(opt.elf.c_str())) {

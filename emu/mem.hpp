@@ -1,117 +1,119 @@
 #pragma once
 #include <cstdint>
 #include <vector>
-#include <unordered_map>
 #include <stdexcept>
-#include <algorithm>
+#include <unordered_map>
+#include <iostream>
 
 class Memory {
 public:
-    explicit Memory(std::size_t n)
-    : bytes(n, 0),
-      text_end(0x1000),
-      heap_brk(0x2000),
-      heap_base(heap_brk),
-      mmio_time(0) {}
+    explicit Memory(std::size_t bytes)
+    : bytes_(bytes, 0), text_end_(0), heap_brk_(8192) {}  // keep your defaults
 
-    // ---- loads/stores (little-endian) with simple MMIO timer ----
+    // ------- loads/stores (host little-endian) -------
     uint32_t load32(uint32_t addr) const {
-        if (addr == 0x3000) return mmio_time;        // TIME
-        if (addr + 3 >= bytes.size()) throw std::out_of_range("load32 OOB");
-        return (uint32_t)bytes[addr]
-             | ((uint32_t)bytes[addr+1] << 8)
-             | ((uint32_t)bytes[addr+2] << 16)
-             | ((uint32_t)bytes[addr+3] << 24);
-    }
-    void store32(uint32_t addr, uint32_t v) {
-        if (addr == 0x3004) { mmio_time += v; return; } // add ticks
-        if (addr == 0x3008) { mmio_time  = 0; return; } // reset
-        if (addr + 3 >= bytes.size()) throw std::out_of_range("store32 OOB");
-        bytes[addr]   = (uint8_t)(v & 0xFF);
-        bytes[addr+1] = (uint8_t)((v >> 8) & 0xFF);
-        bytes[addr+2] = (uint8_t)((v >> 16) & 0xFF);
-        bytes[addr+3] = (uint8_t)((v >> 24) & 0xFF);
-    }
-    void store8(uint32_t addr, uint8_t v){
-        if (addr >= bytes.size()) throw std::out_of_range("store8 OOB");
-        bytes[addr] = v;
-    }
-    uint8_t load8(uint32_t addr) const{
-        if (addr >= bytes.size()) throw std::out_of_range("load8 OOB");
-        return bytes[addr];
+        if (addr & 3) throw std::runtime_error("load32 misaligned");
+        if (addr + 3 >= size()) throw std::out_of_range("load32 OOB");
+        // MMIO reads
+        if (is_mmio(addr)) return mmio_read32(addr);
+        return  (uint32_t)bytes_[addr]
+              | (uint32_t)bytes_[addr+1] << 8
+              | (uint32_t)bytes_[addr+2] << 16
+              | (uint32_t)bytes_[addr+3] << 24;
     }
 
-    // ---- “clock” flows with executed work ----
-    void tick(uint32_t cycles){ mmio_time += cycles; }
-    uint32_t time() const { return mmio_time; }
+    void store32(uint32_t addr, uint32_t value) {
+        if (addr & 3) throw std::runtime_error("store32 misaligned");
+        if (addr + 3 >= size()) throw std::out_of_range("store32 OOB");
+        // MMIO writes
+        if (is_mmio(addr)) { mmio_write32(addr, value); return; }
+        bytes_[addr]   = (uint8_t)(value & 0xFF);
+        bytes_[addr+1] = (uint8_t)((value >> 8) & 0xFF);
+        bytes_[addr+2] = (uint8_t)((value >> 16) & 0xFF);
+        bytes_[addr+3] = (uint8_t)((value >> 24) & 0xFF);
+    }
 
-    // ---- sbrk & tiny first-fit allocator ----
+    uint8_t load8(uint32_t addr) const {
+        if (addr >= size()) throw std::out_of_range("load8 OOB");
+        // MMIO reads
+        if (is_mmio(addr)) return (uint8_t)mmio_read8(addr);
+        return bytes_[addr];
+    }
+    void store8(uint32_t addr, uint8_t v) {
+        if (addr >= size()) throw std::out_of_range("store8 OOB");
+        // MMIO writes
+        if (is_mmio(addr)) { mmio_write8(addr, v); return; }
+        bytes_[addr] = v;
+    }
+
+    // ------- heap (bump pointer) -------
+    // sbrk(delta): move program break; return old break
     uint32_t sbrk(int32_t delta){
-        uint32_t old = heap_brk;
-        int64_t target = (int64_t)heap_brk + (int64_t)delta;
-        target = std::max<int64_t>(target, (int64_t)text_end);
-        target = std::min<int64_t>(target, (int64_t)bytes.size());
-        heap_brk = (uint32_t)target;
+        uint32_t old = heap_brk_;
+        int64_t  nb  = (int64_t)heap_brk_ + delta;
+        if (nb < (int64_t)text_end_) nb = text_end_;
+        if (nb < 0 || nb >= (int64_t)size()) throw std::out_of_range("sbrk OOB");
+        heap_brk_ = (uint32_t)nb;
         return old;
     }
-    uint32_t brk()   const { return heap_brk; }
-    uint32_t hbase() const { return heap_base; }
-    std::size_t size() const { return bytes.size(); }
 
-    uint32_t malloc32(uint32_t nbytes){
-        if (nbytes == 0) return 0;
-        const uint32_t ALIGN = 8;
-        auto align_up = [&](uint32_t v){ return (v + (ALIGN-1)) & ~(ALIGN-1); };
-        uint32_t need = align_up(nbytes);
-        for (size_t i=0;i<blocks.size();++i){
-            auto& b = blocks[i];
-            if (b.free && b.size >= need){
-                uint32_t start=b.start, remain=b.size-need;
-                b.free=false; b.size=need;
-                if (remain >= ALIGN){
-                    blocks.insert(blocks.begin()+i+1, Block{start+need,remain,true});
-                }
-                return start;
-            }
-        }
-        uint32_t grow = std::max<uint32_t>(need, 4096);
-        uint32_t old  = sbrk(grow);
-        blocks.push_back(Block{old,grow,true});
-        return malloc32(need);
-    }
-    void free32(uint32_t ptr){
-        if (ptr < heap_base || ptr >= heap_brk) return;
-        for (size_t i=0;i<blocks.size();++i){
-            auto& b=blocks[i];
-            if (b.start==ptr){
-                b.free=true;
-                if (i+1<blocks.size() && blocks[i+1].free){
-                    b.size += blocks[i+1].size;
-                    blocks.erase(blocks.begin()+i+1);
-                }
-                if (i>0 && blocks[i-1].free){
-                    blocks[i-1].size += b.size;
-                    blocks.erase(blocks.begin()+i);
-                }
-                return;
-            }
+    // record where your .text ends (optional, used by sbrk guard)
+    void set_text_end(uint32_t a){ text_end_ = a; }
+
+    uint32_t size() const { return (uint32_t)bytes_.size(); }
+
+    // ------- software breakpoints (EBREAK patch) -------
+    // Toggle a breakpoint at aligned addr. Returns true if now enabled.
+    bool toggle_break(uint32_t addr){
+        if (addr & 3) throw std::runtime_error("breakpoint addr must be 4-byte aligned");
+        if (addr + 3 >= size()) throw std::out_of_range("breakpoint OOB");
+        auto it = bp_original_.find(addr);
+        if (it == bp_original_.end()){
+            uint32_t w = load32(addr);
+            bp_original_[addr] = w;
+            // EBREAK = 0x00100073
+            store32(addr, 0x00100073u);
+            return true;  // enabled
+        } else {
+            store32(addr, it->second);
+            bp_original_.erase(it);
+            return false; // disabled
         }
     }
-
-    // ---- kernel mutex (very small) ----
-    // returns true if we took the lock; false if already locked
-    bool try_lock(uint32_t addr){
-        return !locks[addr] ? (locks[addr]=true, true) : false;
+    bool has_break(uint32_t addr) const {
+        return bp_original_.count(addr) != 0;
     }
-    void unlock(uint32_t addr){ locks[addr]=false; }
 
 private:
-    struct Block{ uint32_t start, size; bool free; };
+    // ---------------- MMIO ----------------
+    // UART TX @ 0x4000'0000 (one byte)
+    static constexpr uint32_t UART_TX = 0x40000000u;
 
-    std::vector<uint8_t> bytes;
-    uint32_t text_end, heap_brk, heap_base;
+    bool is_mmio(uint32_t addr) const {
+        return addr == UART_TX;
+    }
+    // writes: printing to host console
+    void mmio_write8(uint32_t addr, uint8_t v) const {
+        if (addr == UART_TX) {
+            std::cout.put((char)v);
+            std::cout.flush();
+            return;
+        }
+    }
+    void mmio_write32(uint32_t addr, uint32_t v) const {
+        if (addr == UART_TX) {
+            std::cout.put((char)(v & 0xFF));
+            std::cout.flush();
+            return;
+        }
+    }
+    uint32_t mmio_read32(uint32_t /*addr*/) const { return 0; }
+    uint32_t mmio_read8 (uint32_t /*addr*/) const { return 0; }
 
-    uint32_t mmio_time;
-    std::unordered_map<uint32_t,bool> locks;
-    std::vector<Block> blocks; // sorted by start
+private:
+    std::vector<uint8_t> bytes_;
+    uint32_t text_end_;
+    uint32_t heap_brk_;
+    // breakpoint original words
+    std::unordered_map<uint32_t,uint32_t> bp_original_;
 };

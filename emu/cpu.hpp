@@ -1,20 +1,28 @@
 #pragma once
 #include <cstdint>
+
 class Memory;
 
-struct CPU {
-    // architectural state
-    uint32_t x[32]{}; uint32_t pc{0};
+class CPU {
+public:
+    // simple architectural state
+    uint32_t pc      = 0;
+    uint32_t x[32]   = {0};   // x0..x31
+    // accounting
+    uint64_t instret = 0;
+    uint64_t cycles  = 0;
+    // cooperative/preemptive slice
+    int      quantum = 0;
+    // exit & halt
+    bool     halted  = false;
+    int      exit_code = 0;
+    int      tid       = 0;   // optional “thread id” used by demos
 
-    // runtime flags/counters
-    bool halted{false}; uint32_t exit_code{0};
-    uint64_t cycles{0}, instret{0};
-    uint32_t quantum{0}, slice_count{0}; bool yielded{false};
+    // traps (wow #2)
+    enum class Trap { None, Illegal, MisalignedLoad, MisalignedStore, AccessFault, Breakpoint };
+    Trap last_trap = Trap::None;
 
-    // scheduling metadata (not architectural)
-    uint32_t tid{0};   // thread id (for prints/ownership if you want later)
-    uint32_t prio{1};  // smaller number = higher priority
-
+public:
+    // Execute one instruction; returns false if halted
     bool step(Memory& mem);
-    
 };
