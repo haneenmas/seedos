@@ -6,7 +6,7 @@
 
 ---
 
-## Highlights (what’s “wow”)
+## Highlights 
 - **Devices:** Memory-mapped UART at `0x4000_0000` — storing a byte prints to host console.
 - **Traps:** Illegal / misaligned / access fault; **EBREAK** software breakpoints (INT3-style).
 - **Debugger REPL:** `c`(continue), `s`(step), `b`(toggle breakpoint), `r`(regs), `m`(mem), `d`(disasm).
