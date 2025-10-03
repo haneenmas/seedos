@@ -115,6 +115,14 @@ bool CPU::step(Memory& mem){
     // record one retired instruction
     global_trace().push(tid, pc /* NOTE: pc now holds *next* pc; we want the executed one */,
                         opcode, (uint32_t)cycles, instret);
+    
+    
+    
+    
+    cycles++;                  // we retired one instruction
+    if (quantum > 0) --quantum; // count down the time slice (the "timer")
     return true;
+
+   
 
 }

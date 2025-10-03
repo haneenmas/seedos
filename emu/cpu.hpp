@@ -16,4 +16,5 @@ struct CPU {
     uint32_t prio{1};  // smaller number = higher priority
 
     bool step(Memory& mem);
+    
 };
