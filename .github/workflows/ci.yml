@@ -1,53 +1,23 @@
-name: CI
-
+name: ci
 on:
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
 
 jobs:
-  build-and-test:
-    name: ${{ matrix.os }} / CMake
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-
+  build-macos:
+    runs-on: macos-14
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # (Optional) make sure tools are present; runners usually have them already
-      - name: Install build tools (Ubuntu)
-        if: runner.os == 'Linux'
+      - uses: actions/checkout@v4
+      - name: Configure
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build
-
-      - name: Install build tools (macOS)
-        if: runner.os == 'macOS'
+          mkdir build && cd build
+          cmake -G Xcode -DCMAKE_OSX_DEPLOYMENT_TARGET=12.2 ..
+      - name: Build app
         run: |
-          brew update
-          brew install cmake ninja || true
-
-      - name: Configure (CMake)
+          cd build
+          xcodebuild -project seedos.xcodeproj -scheme seedos -configuration Debug -destination 'platform=macOS' build
+      - name: Build & run tests
         run: |
-          cmake -S . -B build \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DBUILD_TESTING=ON
-
-      - name: Build
-        run: cmake --build build -- -j
-
-      - name: Run ctests
-        run: ctest --test-dir build --output-on-failure
-
-      # Nice-to-have: upload build dir on failure for debugging
-      - name: Upload build logs (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-${{ matrix.os }}
-          path: build
+          cd build
+          xcodebuild -project seedos.xcodeproj -scheme seedos_tests -configuration Debug -destination 'platform=macOS' build
+          ./Debug/seedos_tests
