@@ -6,26 +6,20 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-13
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install tools
-        run: |
-          brew install cmake ninja || true
+      # IMPORTANT: drop any stale build artifacts (old generated_mem.cpp)
+      - name: Clean build dir
+        run: rm -rf build
 
-      - name: Configure (clean)
-        run: |
-          rm -rf build
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Configure (CMake + Ninja)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Run tests (if any)
-        run: |
-          if [ -f build/CTestTestfile.cmake ]; then
-            ctest --test-dir build --output-on-failure
-          else
-            echo "No tests target present, skipping."
-          fi
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
