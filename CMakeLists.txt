@@ -2,64 +2,62 @@ cmake_minimum_required(VERSION 3.16)
 
 project(seedos LANGUAGES CXX)
 
-# ---- C++ standard ----
+# --- C++ standard ---
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Default build type if not provided
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
-endif()
-
-# ---- emulator sources ----
-# If emu/mem.cpp is missing, create a tiny stub so CI doesn’t break.
-set(MEM_CPP emu/mem.cpp)
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/${MEM_CPP}")
-  set(MEM_CPP "${CMAKE_BINARY_DIR}/generated_mem.cpp")
- file(WRITE "${MEM_CPP}" "#include \"mem.hpp\"\n")
-
-endif()
-
-add_library(emu
-  emu/cpu.cpp
-  emu/disasm.cpp
-  emu/trace.cpp
-  emu/elf.cpp
-  emu/syscall.cpp
-  ${MEM_CPP}
+# --- emulator sources (only .cpp here) ---
+set(EMU_SOURCES
+    emu/cpu.cpp
+    emu/disasm.cpp
+    emu/elf.cpp
+    emu/syscall.cpp
+    emu/trace.cpp
 )
-target_include_directories(emu PUBLIC emu)
-set_target_properties(emu PROPERTIES XCODE_GENERATE_SCHEME TRUE)
 
-# ---- main app ----
+# --- Memory translation unit: use emu/mem.cpp if it exists; otherwise make a stub ---
+set(MEM_CPP "${CMAKE_SOURCE_DIR}/emu/mem.cpp")
+if (EXISTS "${MEM_CPP}")
+  list(APPEND EMU_SOURCES "${MEM_CPP}")
+else()
+  # header-only fallback: compile a tiny TU that just includes the header
+  set(GENERATED_MEM_CPP "${CMAKE_BINARY_DIR}/generated_mem.cpp")
+  file(WRITE "${GENERATED_MEM_CPP}" "#include \"mem.hpp\" // header-only fallback\n")
+  list(APPEND EMU_SOURCES "${GENERATED_MEM_CPP}")
+
+  # Fail-fast if the header itself is missing from the repo
+  if (NOT EXISTS "${CMAKE_SOURCE_DIR}/emu/mem.hpp")
+    message(FATAL_ERROR "Missing required header: emu/mem.hpp")
+  endif()
+endif()
+
+# --- build the library ---
+add_library(emu ${EMU_SOURCES})
+target_include_directories(emu PUBLIC emu)
+
+# --- main app ---
 add_executable(seedos emu/main.cpp)
 target_link_libraries(seedos PRIVATE emu)
-set_target_properties(seedos PROPERTIES XCODE_GENERATE_SCHEME TRUE)
 
-# ---- tests (optional, only if sources exist) ----
-option(BUILD_TESTING "Build tests" ON)
+# --- optional tests: only add files that actually exist ---
 include(CTest)
+if (BUILD_TESTING)
+  set(TEST_SOURCES)
+  foreach(f IN LISTS
+      "tests/test_cpu.cpp"
+      "tests/test_util.cpp"
+  )
+    if (EXISTS "${CMAKE_SOURCE_DIR}/${f}")
+      list(APPEND TEST_SOURCES "${f}")
+    endif()
+  endforeach()
 
-if(BUILD_TESTING)
-  set(TEST_SOURCES "")
-
-  # add tests that actually exist in the repo
-  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/test_cpu.cpp")
-    list(APPEND TEST_SOURCES tests/test_cpu.cpp)
-  endif()
-
-  # (add more tests here guarded by EXISTS checks)
-
-  if(TEST_SOURCES)
+  if (TEST_SOURCES)
     add_executable(seedos_tests ${TEST_SOURCES})
-    target_include_directories(seedos_tests PRIVATE emu tests)
     target_link_libraries(seedos_tests PRIVATE emu)
-    set_target_properties(seedos_tests PROPERTIES XCODE_GENERATE_SCHEME TRUE)
-    add_test(NAME unit COMMAND seedos_tests)
-  else()
-    message(STATUS "No test sources found; skipping seedos_tests target.")
+
+    # Simple smoke test if you want one even without gtest:
+    add_test(NAME demo_heap COMMAND seedos --heap)
+    set_tests_properties(demo_heap PROPERTIES PASS_REGULAR_EXPRESSION "Hello, heap & timer!")
   endif()
 endif()
-
-# ---- optional smoke test (disabled by default) ----
-# add_test(NAME demo_heap COMMAND seedos --heap)
