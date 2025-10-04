@@ -1,20 +1,9 @@
-name: ci
-on: [push, pull_request]
-
-jobs:
-  build-macos:
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Ninja
-        run: brew install ninja
-
-      - name: Configure (CMake + Ninja)
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-
-      - name: Build
-        run: cmake --build build --config Release --parallel
-
-      - name: Run tests
-        run: ctest --test-dir build --output-on-failure
+- uses: actions/checkout@v4
+- name: Install Ninja
+  run: brew install ninja
+- name: Configure (CMake + Ninja)
+  run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+- name: Build
+  run: cmake --build build --parallel
+- name: Run tests
+  run: ctest --test-dir build --output-on-failure
