@@ -21,10 +21,17 @@ add_executable(seedos
 )
 target_link_libraries(seedos PRIVATE emu)
 
-# ----- tiny test via CTest (optional) -----
+# ---- tests ----
+option(BUILD_TESTING "Build tests" ON)
 include(CTest)
 if (BUILD_TESTING)
-  add_test(NAME demo_heap COMMAND seedos --heap)
-  set_tests_properties(demo_heap PROPERTIES
-    PASS_REGULAR_EXPRESSION "Hello, heap & timer!")
+  add_executable(seedos_tests
+    tests/test_cpu.cpp
+    tests/test_util.cpp
+  )
+  target_include_directories(seedos_tests PRIVATE emu tests)
+  target_link_libraries(seedos_tests PRIVATE emu)
+
+  add_test(NAME unit COMMAND seedos_tests)
 endif()
+
