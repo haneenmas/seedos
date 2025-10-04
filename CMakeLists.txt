@@ -1,5 +1,4 @@
 cmake_minimum_required(VERSION 3.16)
-
 project(seedos LANGUAGES CXX)
 
 # --- C++ standard ---
@@ -15,31 +14,38 @@ set(EMU_SOURCES
     emu/trace.cpp
 )
 
-# --- Memory translation unit: use emu/mem.cpp if it exists; otherwise make a stub ---
+# --- Memory TU: use emu/mem.cpp if it exists; otherwise compile a tiny shim ---
 set(MEM_CPP "${CMAKE_SOURCE_DIR}/emu/mem.cpp")
 if (EXISTS "${MEM_CPP}")
   list(APPEND EMU_SOURCES "${MEM_CPP}")
 else()
-  # header-only fallback: compile a tiny TU that just includes the header
   set(GENERATED_MEM_CPP "${CMAKE_BINARY_DIR}/generated_mem.cpp")
-  file(WRITE "${GENERATED_MEM_CPP}" "#include \"mem.hpp\" // header-only fallback\n")
+  file(WRITE "${GENERATED_MEM_CPP}" 
+"#if __has_include(\"emu/mem.hpp\")
+  #include \"emu/mem.hpp\"
+#elif __has_include(\"mem.hpp\")
+  #include \"mem.hpp\"
+#else
+  #error \"mem.hpp not found (expected in repo under emu/) \"
+#endif
+")
   list(APPEND EMU_SOURCES "${GENERATED_MEM_CPP}")
-
-  # Fail-fast if the header itself is missing from the repo
-  if (NOT EXISTS "${CMAKE_SOURCE_DIR}/emu/mem.hpp")
-    message(FATAL_ERROR "Missing required header: emu/mem.hpp")
-  endif()
 endif()
 
-# --- build the library ---
+# --- library ---
 add_library(emu ${EMU_SOURCES})
-target_include_directories(emu PUBLIC emu)
+
+# make both include styles work: "mem.hpp" and "emu/mem.hpp"
+target_include_directories(emu PUBLIC
+  ${CMAKE_SOURCE_DIR}/emu
+  ${CMAKE_SOURCE_DIR}
+)
 
 # --- main app ---
 add_executable(seedos emu/main.cpp)
 target_link_libraries(seedos PRIVATE emu)
 
-# --- optional tests: only add files that actually exist ---
+# --- optional tests (only if files exist) ---
 include(CTest)
 if (BUILD_TESTING)
   set(TEST_SOURCES)
@@ -56,7 +62,6 @@ if (BUILD_TESTING)
     add_executable(seedos_tests ${TEST_SOURCES})
     target_link_libraries(seedos_tests PRIVATE emu)
 
-    # Simple smoke test if you want one even without gtest:
     add_test(NAME demo_heap COMMAND seedos --heap)
     set_tests_properties(demo_heap PROPERTIES PASS_REGULAR_EXPRESSION "Hello, heap & timer!")
   endif()
