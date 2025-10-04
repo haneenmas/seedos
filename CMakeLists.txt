@@ -9,7 +9,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(emu
   emu/cpu.cpp
   emu/disasm.cpp
-  emu/mem.cpp
   emu/trace.cpp
   emu/elf.cpp
   emu/syscall.cpp
