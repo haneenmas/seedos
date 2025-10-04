@@ -16,7 +16,8 @@ endif()
 set(MEM_CPP emu/mem.cpp)
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/${MEM_CPP}")
   set(MEM_CPP "${CMAKE_BINARY_DIR}/generated_mem.cpp")
-  file(WRITE "${MEM_CPP}" "#include \"emu/mem.hpp\"\n")
+ file(WRITE "${MEM_CPP}" "#include \"mem.hpp\"\n")
+
 endif()
 
 add_library(emu
