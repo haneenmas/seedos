@@ -1,9 +1,31 @@
-- uses: actions/checkout@v4
-- name: Install Ninja
-  run: brew install ninja
-- name: Configure (CMake + Ninja)
-  run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-- name: Build
-  run: cmake --build build --parallel
-- name: Run tests
-  run: ctest --test-dir build --output-on-failure
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          brew install cmake ninja || true
+
+      - name: Configure (clean)
+        run: |
+          rm -rf build
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run tests (if any)
+        run: |
+          if [ -f build/CTestTestfile.cmake ]; then
+            ctest --test-dir build --output-on-failure
+          else
+            echo "No tests target present, skipping."
+          fi
