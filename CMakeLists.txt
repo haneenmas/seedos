@@ -19,7 +19,7 @@ add_library(emu
     emu/syscall.cpp    emu/syscall.hpp
     emu/trace.cpp      emu/trace.hpp
     emu/main.cpp       emu/main.hpp
-    emu/mem.hpp        # header-only
+   
     emu/sync.hpp       # header-only
     ${CMAKE_BINARY_DIR}/generated_mem.cpp
 )
